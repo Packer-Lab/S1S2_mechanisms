@@ -22,7 +22,7 @@ import numpy as np
 import matplotlib.pyplot as plt 
 import seaborn as sns
 import pandas as pd
-sys.path.append('/home/tplas/repos/Vape')
+sys.path.append(vape_path)
 # from utils.utils_funcs import correct_s2p_combined 
 import xarray as xr
 import scipy
