@@ -35,7 +35,7 @@ from tqdm import tqdm
 # import utils.utils_funcs as uf
 
 sess_type_dict = {'sens': 'sensory_2sec_test',
-                  'proj': 'projection_2sec_test'}
+                  'proj': 'projection_2sepkl_folderc_test'}
 
 sys.path.append(vape_path)
 sys.path.append(os.path.join(vape_path, 'my_suite2p')) # to import ops from settings.py in that folder
@@ -471,7 +471,7 @@ class SimpleSession():
                         trial_type_list=None):
         """region: 's1', 's2', None [for both]"""
         selected_ds = self.dataset_selector(region=region, min_t=t_min, max_t=t_max,
-                                    sort_neurons=False, remove_added_dimensions=True,
+                                    sort_neurons=False, 
                                     trial_type_list=trial_type_list)  # all trial types
         
         if subtract_pcs:
@@ -836,7 +836,7 @@ def plot_pop_av(Ses=None, ax_list=None, region_list=['s2'], sort_trials_per_tt=F
             ax_row = ax
         for i_tt, tt in enumerate(Ses.list_tt):
             pop_act_dict[tt] = Ses.dataset_selector(region=region, trial_type_list=[tt], 
-                                    remove_added_dimensions=True, sort_neurons=False)
+                                                    sort_neurons=False)
             plot_data = pop_act_dict[tt].activity.mean('neuron').transpose()
             time_ax = plot_data.time.data
             if sort_trials_per_tt:
@@ -1030,8 +1030,7 @@ def plot_pca_time_aggr_activity(Ses, trial_type_list=['whisker', 'sensory', 'ran
             print('WARNING: trial type list should be sorted alphabetically. doing that now for you')
             trial_type_list = sorted(trial_type_list)
         selected_ds = Ses.dataset_selector(region=region, min_t=t_min, max_t=t_max,
-                                        sort_neurons=False, remove_added_dimensions=True,
-                                        trial_type_list=trial_type_list)  # all trial types
+                                        sort_neurons=False, trial_type_list=trial_type_list)  # all trial types
         selected_ds_av = selected_ds.groupby('trial_type').mean('trial')  # mean across trials per trial type
         assert selected_ds_av.activity.ndim == 3
         assert list(selected_ds_av.coords.keys()) == ['neuron', 'time', 'trial_type']
@@ -1076,7 +1075,7 @@ def plot_pca_time_aggr_activity(Ses, trial_type_list=['whisker', 'sensory', 'ran
         assert False, 'This is not the correct of doing this PCA analysis, hence i stopped improving it'
         for i_tt, tt in enumerate(trial_type_list):
             selected_ds = Ses.dataset_selector(region=region, min_t=t_min, max_t=t_max,
-                                        sort_neurons=False, remove_added_dimensions=True,
+                                        sort_neurons=False, 
                                         trial_type_list=[tt])  # select just this trial type (tt)
             selected_ds_av = selected_ds.mean('trial')  # trial average activity
 
@@ -1169,7 +1168,7 @@ def manual_poststim_response_classifier(Ses, region='s2', tt_1='sensory', tt_2='
     assert neuron_aggr_method in ['average', 'variance'], f'{neuron_aggr_method} not recognised'
     assert time_aggr_method == 'average', 'no other aggretation method than average implemented'
     ## Get data
-    ds = Ses.dataset_selector(region=region, remove_added_dimensions=True,
+    ds = Ses.dataset_selector(region=region,
                               min_t=t_min, max_t=t_max,
                             sort_neurons=False, trial_type_list=tt_list)
     n_trials_per_tt = 100
@@ -1294,7 +1293,7 @@ def plot_distr_poststim_activity(ses, ax=None, plot_hist=False, tt_list=['sensor
                                  plot_logscale=False):
     if ax is None:
         fig, ax = plt.subplots(1, 1, figsize=(6, 4))
-    tmpr = ses.dataset_selector(region='s2', remove_added_dimensions=True,
+    tmpr = ses.dataset_selector(region='s2',
                                 sort_neurons=False, trial_type_list=tt_list)
     if plot_hist:
         tmphist = ax.hist([tmpr.activity.where(tmpr.trial_type==tt, drop=True).data[:, 45:75, :].ravel() for tt in tt_list],
