@@ -7,7 +7,7 @@
     },
  "tplas_packerserver1": 
     {"paths": {
-      "pkl_folder": "/home/rlees/mnt/qnap/pkl_files/pkl_folder/",
+      "pkl_folder": "/home/rlees/mnt/qnap/pkl_files/",
       "vape_path": "/home/tplas/repos/Vape/",
       "s2p_path": "home/rlees/Documents/Code/suite2p"
               }
