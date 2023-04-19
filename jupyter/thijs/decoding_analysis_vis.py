@@ -3,18 +3,21 @@
 
 from json import decoder
 import os, sys, pickle, copy
+import loadpaths
 
-## Data paths, from 'rob_setup_notebook.ipynb'
-vape_path = '/home/tplas/repos/Vape/'
-s2p_path = 'home/rlees/Documents/Code/suite2p'
-qnap_data_path = '/home/rlees/mnt/qnap/Data' # for Ubuntu
-qnap_path = qnap_data_path[:-5]
+user_paths_dict = loadpaths.loadpaths()
+pkl_folder = user_paths_dict['pkl_folder']
+vape_path = user_paths_dict['vape_path']
+s2p_path = user_paths_dict['s2p_path']
 
-pkl_folder = os.path.join(qnap_path, 'pkl_files')
-master_path = os.path.join(qnap_path, 'master_pkl', 'master_obj.pkl')
-fig_save_path = os.path.join(qnap_path, 'Analysis', 'Figures')
-stam_save_path = os.path.join(qnap_path, 'Analysis', 'STA_movies')
-s2_borders_path = os.path.join(qnap_path, 'Analysis', 'S2_borders')
+## Old data paths, from 'rob_setup_notebook.ipynb'
+# qnap_data_path = '/home/rlees/mnt/qnap/Data' # for Ubuntu
+# qnap_path = qnap_data_path[:-5]
+# pkl_folder = os.path.join(qnap_path, 'pkl_files')
+# master_path = os.path.join(qnap_path, 'master_pkl', 'master_obj.pkl')
+# fig_save_path = os.path.join(qnap_path, 'Analysis', 'Figures')
+# stam_save_path = os.path.join(qnap_path, 'Analysis', 'STA_movies')
+# s2_borders_path = os.path.join(qnap_path, 'Analysis', 'S2_borders')
 
 from select import select
 from urllib import response
@@ -35,11 +38,11 @@ from tqdm import tqdm
 # import utils.utils_funcs as uf
 
 sess_type_dict = {'sens': 'sensory_2sec_test',
-                  'proj': 'projection_2sepkl_folderc_test'}
+                  'proj': 'projection_2sec_test'}
 
-sys.path.append(vape_path)
 sys.path.append(os.path.join(vape_path, 'my_suite2p')) # to import ops from settings.py in that folder
-sys.path.append(s2p_path)
+if s2p_path is not None:
+    sys.path.append(s2p_path)
 # import suite2p
 
 prop_cycle = plt.rcParams['axes.prop_cycle']

@@ -1,0 +1,15 @@
+{ "tplas_packerserver2": 
+    {"paths": {
+      "pkl_folder": "/home/tplas/gin_repos/S1S2_mechanisms_data/pkl_folder/",
+      "vape_path": "/home/tplas/repos/Vape/",
+      "s2p_path": null              
+                }
+    },
+ "tplas_packerserver1": 
+    {"paths": {
+      "pkl_folder": "/home/rlees/mnt/qnap/pkl_files/pkl_folder/",
+      "vape_path": "/home/tplas/repos/Vape/",
+      "s2p_path": "home/rlees/Documents/Code/suite2p"
+              }
+    }
+} 
