@@ -11,5 +11,12 @@
       "vape_path": "/home/tplas/repos/Vape/",
       "s2p_path": "home/rlees/Documents/Code/suite2p"
               }
-    }
+    },
+  "newuser_newcomputer": 
+       {"paths": {
+         "pkl_folder": "path/to/ginrepo/",
+         "vape_path": "path/to/Vape/",
+         "s2p_path": null
+                 }
+       }
 } 
