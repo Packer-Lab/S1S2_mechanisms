@@ -32,6 +32,7 @@ import scipy
 from profilehooks import profile, timecall
 import sklearn.discriminant_analysis, sklearn.model_selection, sklearn.decomposition
 from tqdm import tqdm
+from statsmodels.stats import multitest
 
 ## From Vape:
 # import utils.ia_funcs as ia 
@@ -716,6 +717,8 @@ class AllSessions():
                               'photostim_r': 'non_projecting',
                               'spont': 'sham'}
             self._list_tt_original = ['photostim_s', 'photostim_r', 'spont']
+        else:
+            assert False, 'sess_type not implemented'
         self.list_tt = [self._key_dict[tt] for tt in self._list_tt_original]
 
         self.create_accumulated_data()
@@ -772,8 +775,6 @@ class AllSessions():
             cc_ds = cc_ds.assign(artefact_bool=cc_ds.artefact_bool.isel(neuron=0).drop('neuron'))  # is this the best way? probably missing some magic here
             
         assert np.sum(np.isnan(cc_ds.activity)) == 0      
-
-
 
         self.full_ds = cc_ds        
         all_vars = list(dict(self.full_ds.variables).keys())                    
@@ -1594,3 +1595,154 @@ def suprathreshold_cluster_size_test(p_val_dict, alpha=0.05, n_perm=5000):
 
     return sign_dict
 
+
+
+def get_percent_cells_responding(session, region='s1', fdr_rate=0.015, 
+                                 pre_window=(-1.2, -0.15), post_window=(0.55, 1.65),
+                                 verbose=0):
+
+    assert len(pre_window) == 2 and len(post_window) == 2, 'pre and post window must be a tuple of length 2'
+    assert pre_window[0] < pre_window[1] and post_window[0] < post_window[1], 'pre and post window must be in order'
+    assert region in ['s1', 's2'], 'region must be s1 or s2'
+    assert pre_window[1] < 0 and post_window[0] > 0, 'pre and post window must be before and after stimulus'
+
+    sel_data = session.dataset_selector(region=region, sort_neurons=False, min_t=pre_window[0], 
+                                        max_t=post_window[1], deepcopy=True)
+    
+    dff = sel_data.activity
+    assert dff.dims == ('neuron', 'time', 'trial')
+    dff_pre = dff.where(np.logical_and(sel_data.time >= pre_window[0], sel_data.time <= pre_window[1]), drop=True)
+    dff_post = dff.where(np.logical_and(sel_data.time >= post_window[0], sel_data.time <= post_window[1]), drop=True)
+    assert dff_pre.shape == dff_post.shape, f'dff_pre.shape = {dff_pre.shape}, dff_post.shape = {dff_post.shape}'
+
+    n_trials = len(dff_pre.trial)
+    n_positive_responders = np.zeros(n_trials)
+    n_negative_responders = np.zeros(n_trials)
+
+    for i_trial in tqdm(dff_pre.trial):
+        dff_pre_curr = dff_pre.sel(trial=i_trial)
+        dff_post_curr = dff_post.sel(trial=i_trial)
+        assert dff_post_curr.dims == ('neuron', 'time') and dff_pre_curr.dims == ('neuron', 'time')
+        p_vals_neurons = np.zeros(len(dff_pre_curr.neuron))
+        for i_neuron, neuron in enumerate(dff_pre_curr.neuron):
+            p_vals_neurons[i_neuron] = scipy.stats.wilcoxon(dff_pre_curr.sel(neuron=neuron).data, 
+                                                            dff_post_curr.sel(neuron=neuron).data)[1]
+        significance_neurons, p_vals_neurons_corr, _, _ = multitest.multipletests(p_vals_neurons, 
+                                                                                  alpha=fdr_rate, method='fdr_bh',
+                                                                                  is_sorted=False, returnsorted=False)
+        
+        positive_cells = dff_post_curr.mean('time') > dff_pre_curr.mean('time')
+        negative_cells = np.logical_not(positive_cells)
+
+        n_positive_responders[i_trial] = np.sum(np.logical_and(significance_neurons, positive_cells))
+        n_negative_responders[i_trial] = np.sum(np.logical_and(significance_neurons, negative_cells))
+
+    n_cells = len(dff_pre.neuron)
+    percent_positive_responders = n_positive_responders / n_cells * 100
+    percent_negative_responders = n_negative_responders / n_cells * 100
+
+    df_results = pd.DataFrame({'percent_positive_responders': percent_positive_responders,
+                               'percent_negative_responders': percent_negative_responders,
+                               'n_positive_responders': n_positive_responders,
+                               'n_negative_responders': n_negative_responders,
+                               'trial_type': sel_data.trial_type.data,
+                               'trial': sel_data.trial.data})
+    df_results['session_name_readable'] = session.session_name_readable
+
+    return percent_positive_responders, percent_negative_responders, sel_data, df_results
+
+
+def _get_percent_cells_responding(session, region='s1', direction='positive', prereward=False):
+
+    # Haven't built this for 5 Hz data
+    assert session.mouse not in ['J048', 'RL048']
+
+    # 0.015 gives you 5% of cells responding (positive + negative)
+    # on cr (for session 0)
+    # Get me for 5% across all 
+    fdr_rate = 0.015
+
+    ## Get data:
+    if not prereward:
+        flu = session.behaviour_trials
+    else:
+        flu = session.pre_rew_trials
+    times_use = session.filter_ps_time
+    if region == 's1':
+        flu = flu[session.s1_bool, :, :]
+    elif region == 's2':
+        flu = flu[session.s2_bool, :, :]
+    
+    percent_cells_responding = []
+    magnitude = []
+
+    for trial_idx in range(flu.shape[1]):
+        trial = flu[:, trial_idx, :]
+
+        ## 500 ms before the stim with a nice juicy buffer to the artifact just in case
+        pre_idx = np.where(times_use < -0.15)[0][-15:]  
+
+        ## You can dial this back closer to the artifact if you cut out 150
+        post_idx = np.logical_and(times_use > 1, times_use <= 1.5)
+        
+        pre_array = trial[:, pre_idx]
+        post_array = trial[:, post_idx]
+        
+        p_vals = [scipy.stats.wilcoxon(pre, post)[1] for pre, post in zip(pre_array, post_array)]
+        p_vals = np.array(p_vals)
+        
+        sig_cells, correct_pval, _, _ = multitest.multipletests(p_vals, alpha=fdr_rate, method='fdr_bh',
+                                                            is_sorted=False, returnsorted=False)
+        
+        ## This doesn't split by positive and negative percent_cells_responding.append(sum(sig_cells))
+        positive = np.mean(post_array, 1) > np.mean(pre_array, 1)
+        negative = np.logical_not(positive)        
+        
+        if direction == 'positive':
+            percent_cells_responding.append(np.sum(np.logical_and(sig_cells, positive)))
+            magnitude.append(np.sum(np.mean(post_array[positive, :], 1) - np.mean(pre_array[positive, :] , 1)))
+        else:
+            percent_cells_responding.append(np.sum(np.logical_and(sig_cells, negative)))
+            magnitude.append(np.sum(np.mean(post_array[negative, :], 1) - np.mean(pre_array[negative, :] , 1)))
+        
+    if region == 's1':
+        n = np.sum(session.s1_bool)
+    elif region == 's2':
+        n = np.sum(session.s2_bool)
+        
+    percent_cells_responding = np.array(percent_cells_responding) / n * 100
+    
+    assert len(percent_cells_responding) == flu.shape[1]
+    assert len(magnitude) == flu.shape[1]
+    return percent_cells_responding
+
+def transfer_dict(msm, region, direction='positive'):
+    '''For each session, compute how many responding cells [in direction] there are 
+    for both hit and miss trials. '''
+    n_cells_list_of_lists = [[5], [10], [20], [30], [40], [50], [150]]
+    # n_cells_list_of_lists = [[5,10], [20,30], [40,50], [150]]
+    hit_mean_dict, miss_mean_dict = {}, {}
+    hit_var_dict, miss_var_dict = {}, {}
+    n_sessions = len(msm.linear_models)
+    for session_idx in range(n_sessions):
+        session = msm.linear_models[session_idx].session
+        n_responders = get_percent_cells_responding(session, region=region, direction=direction)
+
+        for n_cells in n_cells_list_of_lists:
+            idx = np.isin(session.trial_subsets, n_cells)
+            idx_miss = np.logical_and(idx, session.outcome == 'miss')
+            idx_hit = np.logical_and(idx, session.outcome == 'hit')
+
+            centre_cells = np.mean(n_cells)
+            if centre_cells not in hit_mean_dict:
+                hit_mean_dict[centre_cells] = np.zeros(n_sessions)
+                miss_mean_dict[centre_cells] = np.zeros(n_sessions)
+                hit_var_dict[centre_cells] = np.zeros(n_sessions)
+                miss_var_dict[centre_cells] = np.zeros(n_sessions)
+
+            hit_mean_dict[centre_cells][session_idx] = np.mean(n_responders[idx_hit])
+            miss_mean_dict[centre_cells][session_idx] = np.mean(n_responders[idx_miss])
+            hit_var_dict[centre_cells][session_idx] = np.var(n_responders[idx_hit])
+            miss_var_dict[centre_cells][session_idx] = np.var(n_responders[idx_miss])
+            
+    return hit_mean_dict, miss_mean_dict, hit_var_dict, miss_var_dict
