@@ -33,6 +33,8 @@ from profilehooks import profile, timecall
 import sklearn.discriminant_analysis, sklearn.model_selection, sklearn.decomposition
 from tqdm import tqdm
 from statsmodels.stats import multitest
+sys.path.append('/home/tplas/repos/reproducible_figures/scripts/')
+import rep_fig_vis as rfv 
 
 ## From Vape:
 # import utils.ia_funcs as ia 
@@ -1651,98 +1653,73 @@ def get_percent_cells_responding(session, region='s1', fdr_rate=0.015,
 
     return percent_positive_responders, percent_negative_responders, sel_data, df_results
 
+def overview_plot_metric_vs_responders(sess_dict, sess_type='sens', 
+                                       dict_df_responders=None,
+                                       ignore_whisker=True,
+                                       metric='pop_var',
+                                       response_type='positive'):
+    n_sess = 6
+    n_tts = 3
+    assert len(sess_dict) == n_sess
+    assert sess_type in ['sens', 'proj'], f'sess_type must be sens or proj, not {sess_type}'
+    assert metric in ['pop_var'], f'metric must be pop_var, not {metric}'
+    assert response_type in ['positive', 'negative', 'total'], f'response_type must be positive, negative or total, not {response_type}'
+    assert ignore_whisker, 'Not implemented yet'
 
-def _get_percent_cells_responding(session, region='s1', direction='positive', prereward=False):
+    fig = plt.figure(figsize=(12, 7))
+    gs_tt = {}
+    gs_tt[0] = plt.GridSpec(3, 2, left=0.03, right=0.3, top=0.95, bottom=0.05, wspace=0.3, hspace=0.3)
+    gs_tt[1] = plt.GridSpec(3, 2, left=0.36, right=0.63, top=0.95, bottom=0.05, wspace=0.3, hspace=0.3)
+    gs_tt[2] = plt.GridSpec(3, 2, left=0.7, right=0.97, top=0.95, bottom=0.05, wspace=0.3, hspace=0.3)
 
-    # Haven't built this for 5 Hz data
-    assert session.mouse not in ['J048', 'RL048']
-
-    # 0.015 gives you 5% of cells responding (positive + negative)
-    # on cr (for session 0)
-    # Get me for 5% across all 
-    fdr_rate = 0.015
-
-    ## Get data:
-    if not prereward:
-        flu = session.behaviour_trials
-    else:
-        flu = session.pre_rew_trials
-    times_use = session.filter_ps_time
-    if region == 's1':
-        flu = flu[session.s1_bool, :, :]
-    elif region == 's2':
-        flu = flu[session.s2_bool, :, :]
-    
-    percent_cells_responding = []
-    magnitude = []
-
-    for trial_idx in range(flu.shape[1]):
-        trial = flu[:, trial_idx, :]
-
-        ## 500 ms before the stim with a nice juicy buffer to the artifact just in case
-        pre_idx = np.where(times_use < -0.15)[0][-15:]  
-
-        ## You can dial this back closer to the artifact if you cut out 150
-        post_idx = np.logical_and(times_use > 1, times_use <= 1.5)
+    ax_dict = {i_tt: {} for i_tt in range(n_tts)}
+    for sess_id in range(n_sess):
+        ax_dict[sess_id] = {}
+        curr_ds = sess_dict[sess_id].full_ds
+        if sess_type == 'sens':
+            assert len(curr_ds.trial_type) == 400, f'len trial type is {len(curr_ds.trial_type)}'
+        elif sess_type == 'proj':
+            assert len(curr_ds.trial_type) == 300, f'len trial type is {len(curr_ds.trial_type)}'
         
-        pre_array = trial[:, pre_idx]
-        post_array = trial[:, post_idx]
-        
-        p_vals = [scipy.stats.wilcoxon(pre, post)[1] for pre, post in zip(pre_array, post_array)]
-        p_vals = np.array(p_vals)
-        
-        sig_cells, correct_pval, _, _ = multitest.multipletests(p_vals, alpha=fdr_rate, method='fdr_bh',
-                                                            is_sorted=False, returnsorted=False)
-        
-        ## This doesn't split by positive and negative percent_cells_responding.append(sum(sig_cells))
-        positive = np.mean(post_array, 1) > np.mean(pre_array, 1)
-        negative = np.logical_not(positive)        
-        
-        if direction == 'positive':
-            percent_cells_responding.append(np.sum(np.logical_and(sig_cells, positive)))
-            magnitude.append(np.sum(np.mean(post_array[positive, :], 1) - np.mean(pre_array[positive, :] , 1)))
-        else:
-            percent_cells_responding.append(np.sum(np.logical_and(sig_cells, negative)))
-            magnitude.append(np.sum(np.mean(post_array[negative, :], 1) - np.mean(pre_array[negative, :] , 1)))
-        
-    if region == 's1':
-        n = np.sum(session.s1_bool)
-    elif region == 's2':
-        n = np.sum(session.s2_bool)
-        
-    percent_cells_responding = np.array(percent_cells_responding) / n * 100
-    
-    assert len(percent_cells_responding) == flu.shape[1]
-    assert len(magnitude) == flu.shape[1]
-    return percent_cells_responding
-
-def transfer_dict(msm, region, direction='positive'):
-    '''For each session, compute how many responding cells [in direction] there are 
-    for both hit and miss trials. '''
-    n_cells_list_of_lists = [[5], [10], [20], [30], [40], [50], [150]]
-    # n_cells_list_of_lists = [[5,10], [20,30], [40,50], [150]]
-    hit_mean_dict, miss_mean_dict = {}, {}
-    hit_var_dict, miss_var_dict = {}, {}
-    n_sessions = len(msm.linear_models)
-    for session_idx in range(n_sessions):
-        session = msm.linear_models[session_idx].session
-        n_responders = get_percent_cells_responding(session, region=region, direction=direction)
-
-        for n_cells in n_cells_list_of_lists:
-            idx = np.isin(session.trial_subsets, n_cells)
-            idx_miss = np.logical_and(idx, session.outcome == 'miss')
-            idx_hit = np.logical_and(idx, session.outcome == 'hit')
-
-            centre_cells = np.mean(n_cells)
-            if centre_cells not in hit_mean_dict:
-                hit_mean_dict[centre_cells] = np.zeros(n_sessions)
-                miss_mean_dict[centre_cells] = np.zeros(n_sessions)
-                hit_var_dict[centre_cells] = np.zeros(n_sessions)
-                miss_var_dict[centre_cells] = np.zeros(n_sessions)
-
-            hit_mean_dict[centre_cells][session_idx] = np.mean(n_responders[idx_hit])
-            miss_mean_dict[centre_cells][session_idx] = np.mean(n_responders[idx_miss])
-            hit_var_dict[centre_cells][session_idx] = np.var(n_responders[idx_hit])
-            miss_var_dict[centre_cells][session_idx] = np.var(n_responders[idx_miss])
+        for i_tt in range(n_tts):
+            trial_slice = slice(i_tt * 100, (i_tt + 1) * 100) 
+            assert len(np.unique(curr_ds.trial_type[trial_slice])) == 1, f'trial slice {trial_slice} contains multiple trial types'
+            tt = curr_ds.trial_type[trial_slice].data[0]
             
-    return hit_mean_dict, miss_mean_dict, hit_var_dict, miss_var_dict
+            curr_df = dict_df_responders[sess_type][sess_id][trial_slice]
+            if response_type == 'positive':
+                responders = curr_df['percent_positive_responders']
+            elif response_type == 'negative':
+                responders = curr_df['percent_negative_responders']
+            elif response_type == 'total':  
+                responders = curr_df['percent_positive_responders'] + curr_df['percent_negative_responders']
+
+            if metric == 'pop_var':
+                metric_plot = curr_ds.sel(time=slice(-0.6, -0.1)).mean('time').var('neuron').activity[trial_slice]
+                metric_plot = np.log(metric_plot)
+                metric_plot = (metric_plot - metric_plot.mean()) / metric_plot.std()
+
+            pearson_r, pearson_p = scipy.stats.pearsonr(metric_plot, responders)
+
+            row_id = sess_id // 2
+            col_id = sess_id % 2
+            ax_dict[i_tt][sess_id] = fig.add_subplot(gs_tt[i_tt][row_id, col_id])
+            curr_ax = ax_dict[i_tt][sess_id]
+            curr_ax.plot(metric_plot, responders, '.', markersize=6, color=colour_tt_dict[tt])
+            p_val = rfv.readable_p_significance_statement(pearson_p, n_bonf=6)[1]
+            curr_ax.annotate(f'r = {pearson_r:.2f}, {p_val}', xy=(0.05, 1.05), xycoords='axes fraction',
+                             weight='bold' if p_val != 'n.s.' else 'normal')
+            rfv.despine(curr_ax)
+            if metric == 'pop_var':
+                curr_ax.set_xlim([-3.5, 3.5])
+                if row_id == 2:
+                    curr_ax.set_xlabel('Population variance\n(log, zscored)')
+                else:
+                    curr_ax.set_xticklabels([])
+            if col_id == 0:
+                curr_ax.set_ylabel(f'{response_type} responders (%)')
+            else:
+                pass
+
+    for i_tt in range(n_tts):
+        fig.align_ylabels(list(ax_dict[i_tt].values())[::2])
