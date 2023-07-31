@@ -1597,17 +1597,17 @@ def suprathreshold_cluster_size_test(p_val_dict, alpha=0.05, n_perm=5000):
 
     return sign_dict
 
-
-
 def get_percent_cells_responding(session, region='s1', fdr_rate=0.015, 
                                  pre_window=(-1.2, -0.15), post_window=(0.55, 1.65),
-                                 verbose=0):
+                                 verbose=0, get_responders_targets=False):
 
     assert len(pre_window) == 2 and len(post_window) == 2, 'pre and post window must be a tuple of length 2'
     assert pre_window[0] < pre_window[1] and post_window[0] < post_window[1], 'pre and post window must be in order'
     assert region in ['s1', 's2'], 'region must be s1 or s2'
     assert pre_window[1] < 0 and post_window[0] > 0, 'pre and post window must be before and after stimulus'
-
+    if get_responders_targets and region == 's2':
+        get_responders_targets = False 
+        print('No targets in S2, so not finding responders per targets.')
     sel_data = session.dataset_selector(region=region, sort_neurons=False, min_t=pre_window[0], 
                                         max_t=post_window[1], deepcopy=True)
     
@@ -1620,6 +1620,9 @@ def get_percent_cells_responding(session, region='s1', fdr_rate=0.015,
     n_trials = len(dff_pre.trial)
     n_positive_responders = np.zeros(n_trials)
     n_negative_responders = np.zeros(n_trials)
+    if get_responders_targets:
+        n_positive_target_responders = np.zeros(n_trials)
+        n_negative_target_responders = np.zeros(n_trials)
 
     for i_trial in tqdm(dff_pre.trial):
         dff_pre_curr = dff_pre.sel(trial=i_trial)
@@ -1635,9 +1638,34 @@ def get_percent_cells_responding(session, region='s1', fdr_rate=0.015,
         
         positive_cells = dff_post_curr.mean('time') > dff_pre_curr.mean('time')
         negative_cells = np.logical_not(positive_cells)
+        significant_positive_cells = np.logical_and(significance_neurons, positive_cells)
+        significant_negative_cells = np.logical_and(significance_neurons, negative_cells)
 
-        n_positive_responders[i_trial] = np.sum(np.logical_and(significance_neurons, positive_cells))
-        n_negative_responders[i_trial] = np.sum(np.logical_and(significance_neurons, negative_cells))
+        n_positive_responders[i_trial] = np.sum(significant_positive_cells)
+        n_negative_responders[i_trial] = np.sum(significant_negative_cells)
+
+        if get_responders_targets:
+            tt = sel_data.sel(trial=i_trial).trial_type.data
+            if tt == 'sensory':
+                targets_vector = sel_data.sel(trial=i_trial).targets_sensory.data
+            elif tt == 'random':
+                targets_vector = sel_data.sel(trial=i_trial).targets_random.data
+            elif tt == 'projecting':
+                targets_vector = sel_data.sel(trial=i_trial).targets_projecting.data
+            elif tt == 'non_projecting':
+                targets_vector = sel_data.sel(trial=i_trial).targets_non_projecting.data
+            elif tt == 'sham' or tt == 'whisker':
+                targets_vector = np.zeros(len(significant_positive_cells), dtype=np.bool)
+            else:
+                assert False, f'trial type {tt} not recognised'
+
+            assert len(targets_vector) == len(significant_positive_cells)
+            assert len(targets_vector) == len(significant_negative_cells)
+            targets_vector = targets_vector.astype(np.bool)
+            positive_responders_targets = np.logical_and(significant_positive_cells, targets_vector)
+            negative_responders_targets = np.logical_and(significant_negative_cells, targets_vector)
+            n_positive_target_responders[i_trial] = np.sum(positive_responders_targets) / np.sum(targets_vector) * 100  # percentage 
+            n_negative_target_responders[i_trial] = np.sum(negative_responders_targets) / np.sum(targets_vector) * 100
 
     n_cells = len(dff_pre.neuron)
     percent_positive_responders = n_positive_responders / n_cells * 100
@@ -1650,6 +1678,9 @@ def get_percent_cells_responding(session, region='s1', fdr_rate=0.015,
                                'trial_type': sel_data.trial_type.data,
                                'trial': sel_data.trial.data})
     df_results['session_name_readable'] = session.session_name_readable
+    if get_responders_targets:
+        df_results['n_positive_responders_targets'] = n_positive_target_responders
+        df_results['n_negative_responders_targets'] = n_negative_target_responders
 
     return percent_positive_responders, percent_negative_responders, sel_data, df_results
 
@@ -1663,7 +1694,7 @@ def overview_plot_metric_vs_responders(sess_dict, sess_type='sens',
     n_tts = 3
     assert len(sess_dict) == n_sess
     assert sess_type in ['sens', 'proj'], f'sess_type must be sens or proj, not {sess_type}'
-    assert metric in ['pop_var'], f'metric must be pop_var, not {metric}'
+    assert metric in ['pop_var', 'dot_product_spont_stim'], f'metric can not be {metric}'
     assert response_type in ['positive', 'negative', 'total'], f'response_type must be positive, negative or total, not {response_type}'
     assert ignore_whisker, 'Not implemented yet'
 
@@ -1700,6 +1731,25 @@ def overview_plot_metric_vs_responders(sess_dict, sess_type='sens',
                 metric_plot = curr_ds.sel(time=slice(-0.6, -0.1)).sel(neuron=curr_ds.cell_s1).mean('time').var('neuron').activity[trial_slice]
                 metric_plot = np.log(metric_plot)
                 metric_plot = (metric_plot - metric_plot.mean()) / metric_plot.std()
+            elif metric == 'dot_product_spont_stim':
+                tmp_ds = curr_ds.sel(time=slice(-0.6, -0.1)).sel(neuron=curr_ds.cell_s1).sel(trial=np.arange((i_tt * 100), ((i_tt + 1) * 100)))
+                assert len(np.unique(tmp_ds.trial_type)) == 1, f'trial slice {trial_slice} contains multiple trial types'
+                assert np.unique(tmp_ds.trial_type)[0] == tt, f'trial slice {trial_slice} contains multiple trial types'
+                if tt == 'sensory':
+                    stim_vector = tmp_ds.targets_sensory.values.astype(int)
+                elif tt == 'random':
+                    stim_vector = tmp_ds.targets_random.values.astype(int)
+                elif tt == 'projecting':    
+                    stim_vector = tmp_ds.targets_projecting.values.astype(int)
+                elif tt == 'non_projecting':
+                    stim_vector = tmp_ds.targets_non_projecting.values.astype(int)
+                elif tt == 'sham':
+                    stim_vector = np.zeros(tmp_ds.dims['neuron'])
+
+                activity_vector_per_trial = tmp_ds.activity.mean('time')
+                assert len(stim_vector) == activity_vector_per_trial.shape[0], f'len stim vector is {len(stim_vector)}, len activity vector is {activity_vector_per_trial.shape[0]}'
+                similarity_array = np.dot(stim_vector, activity_vector_per_trial.values)
+                metric_plot = similarity_array
 
             pearson_r, pearson_p = scipy.stats.pearsonr(metric_plot, responders)
 
@@ -1714,10 +1764,15 @@ def overview_plot_metric_vs_responders(sess_dict, sess_type='sens',
             rfv.despine(curr_ax)
             if metric == 'pop_var':
                 curr_ax.set_xlim([-3.5, 3.5])
-                if row_id == 2:
+            elif metric == 'dot_product_spont_stim':
+                curr_ax.set_xlim([-12, 12]) 
+            if row_id == 2:
+                if metric == 'pop_var':
                     curr_ax.set_xlabel('Population variance\n(log, zscored)')
-                else:
-                    curr_ax.set_xticklabels([])
+                elif metric == 'dot_product_spont_stim':
+                    curr_ax.set_xlabel('Similarity spont/stim')
+            else:
+                curr_ax.set_xticklabels([])
             if col_id == 0:
                 curr_ax.set_ylabel(f'{response_type} responders (%)')
             else:
