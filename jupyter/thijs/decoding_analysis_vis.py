@@ -1657,7 +1657,8 @@ def overview_plot_metric_vs_responders(sess_dict, sess_type='sens',
                                        dict_df_responders=None,
                                        ignore_whisker=True,
                                        metric='pop_var',
-                                       response_type='positive'):
+                                       response_type='positive',
+                                       append_to_title=''):
     n_sess = 6
     n_tts = 3
     assert len(sess_dict) == n_sess
@@ -1666,15 +1667,15 @@ def overview_plot_metric_vs_responders(sess_dict, sess_type='sens',
     assert response_type in ['positive', 'negative', 'total'], f'response_type must be positive, negative or total, not {response_type}'
     assert ignore_whisker, 'Not implemented yet'
 
-    fig = plt.figure(figsize=(12, 7))
+    fig = plt.figure(figsize=(12, 6))
     gs_tt = {}
     gs_tt[0] = plt.GridSpec(3, 2, left=0.03, right=0.3, top=0.95, bottom=0.05, wspace=0.3, hspace=0.3)
     gs_tt[1] = plt.GridSpec(3, 2, left=0.36, right=0.63, top=0.95, bottom=0.05, wspace=0.3, hspace=0.3)
     gs_tt[2] = plt.GridSpec(3, 2, left=0.7, right=0.97, top=0.95, bottom=0.05, wspace=0.3, hspace=0.3)
 
     ax_dict = {i_tt: {} for i_tt in range(n_tts)}
+    save_tt_names = np.zeros((n_tts, n_sess), dtype=np.object)
     for sess_id in range(n_sess):
-        ax_dict[sess_id] = {}
         curr_ds = sess_dict[sess_id].full_ds
         if sess_type == 'sens':
             assert len(curr_ds.trial_type) == 400, f'len trial type is {len(curr_ds.trial_type)}'
@@ -1685,7 +1686,8 @@ def overview_plot_metric_vs_responders(sess_dict, sess_type='sens',
             trial_slice = slice(i_tt * 100, (i_tt + 1) * 100) 
             assert len(np.unique(curr_ds.trial_type[trial_slice])) == 1, f'trial slice {trial_slice} contains multiple trial types'
             tt = curr_ds.trial_type[trial_slice].data[0]
-            
+            save_tt_names[i_tt, sess_id] = tt
+
             curr_df = dict_df_responders[sess_type][sess_id][trial_slice]
             if response_type == 'positive':
                 responders = curr_df['percent_positive_responders']
@@ -1695,7 +1697,7 @@ def overview_plot_metric_vs_responders(sess_dict, sess_type='sens',
                 responders = curr_df['percent_positive_responders'] + curr_df['percent_negative_responders']
 
             if metric == 'pop_var':
-                metric_plot = curr_ds.sel(time=slice(-0.6, -0.1)).mean('time').var('neuron').activity[trial_slice]
+                metric_plot = curr_ds.sel(time=slice(-0.6, -0.1)).sel(neuron=curr_ds.cell_s1).mean('time').var('neuron').activity[trial_slice]
                 metric_plot = np.log(metric_plot)
                 metric_plot = (metric_plot - metric_plot.mean()) / metric_plot.std()
 
@@ -1723,3 +1725,7 @@ def overview_plot_metric_vs_responders(sess_dict, sess_type='sens',
 
     for i_tt in range(n_tts):
         fig.align_ylabels(list(ax_dict[i_tt].values())[::2])
+        assert len(np.unique(save_tt_names[i_tt, :])) == 1, f'trial types are not the same across sessions for tt {i_tt}'
+        title_use = save_tt_names[i_tt, 0] + append_to_title
+        ax_dict[i_tt][0].set_title(title_use, y=1.15, x=1.25,
+                                   fontdict={'fontsize': 14, 'fontweight': 'bold', 'color': colour_tt_dict[save_tt_names[i_tt, 0]]})
