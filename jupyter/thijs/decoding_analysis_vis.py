@@ -1687,7 +1687,7 @@ def get_percent_cells_responding(session, region='s1', fdr_rate=0.015,
 def overview_plot_metric_vs_responders(sess_dict, sess_type='sens', 
                                        dict_df_responders=None,
                                        ignore_whisker=True,
-                                       metric='pop_var',
+                                       metric='pop_var', zscore_metric=False,
                                        response_type='positive',
                                        append_to_title=''):
     n_sess = 6
@@ -1695,7 +1695,7 @@ def overview_plot_metric_vs_responders(sess_dict, sess_type='sens',
     assert len(sess_dict) == n_sess
     assert sess_type in ['sens', 'proj'], f'sess_type must be sens or proj, not {sess_type}'
     assert metric in ['pop_var', 'dot_product_spont_stim'], f'metric can not be {metric}'
-    assert response_type in ['positive', 'negative', 'total'], f'response_type must be positive, negative or total, not {response_type}'
+    assert response_type in ['positive', 'negative', 'total', 'pre_post_corr_s2'], f'response_type must be positive, negative or total, not {response_type}'
     assert ignore_whisker, 'Not implemented yet'
 
     fig = plt.figure(figsize=(12, 6))
@@ -1726,11 +1726,21 @@ def overview_plot_metric_vs_responders(sess_dict, sess_type='sens',
                 responders = curr_df['percent_negative_responders']
             elif response_type == 'total':  
                 responders = curr_df['percent_positive_responders'] + curr_df['percent_negative_responders']
+            elif response_type == 'pre_post_corr_s2':
+                ds_pre = curr_ds.sel(time=slice(-0.6, -0.1)).sel(neuron=np.logical_not(curr_ds.cell_s1)).sel(trial=np.arange((i_tt * 100), ((i_tt + 1) * 100)))
+                ds_post = curr_ds.sel(time=slice(0.6, 1.1)).sel(neuron=np.logical_not(curr_ds.cell_s1)).sel(trial=np.arange((i_tt * 100), ((i_tt + 1) * 100)))
+                assert len(np.unique(ds_pre.trial_type)) == 1, f'trial slice {trial_slice} contains multiple trial types'
+                assert np.unique(ds_pre.trial_type)[0] == tt, f'trial slice {trial_slice} contains multiple trial types'
+                ds_pre = ds_pre.mean('time')
+                ds_post = ds_post.mean('time')
+                cc_trials = np.zeros(ds_pre.dims['trial'])
+                for i_trial in range(ds_pre.dims['trial']):
+                    cc_trials[i_trial] = np.corrcoef(ds_pre.isel(trial=i_trial).activity, ds_post.isel(trial=i_trial).activity)[0, 1]
+                responders = cc_trials  
 
             if metric == 'pop_var':
                 metric_plot = curr_ds.sel(time=slice(-0.6, -0.1)).sel(neuron=curr_ds.cell_s1).mean('time').var('neuron').activity[trial_slice]
                 metric_plot = np.log(metric_plot)
-                metric_plot = (metric_plot - metric_plot.mean()) / metric_plot.std()
             elif metric == 'dot_product_spont_stim':
                 tmp_ds = curr_ds.sel(time=slice(-0.6, -0.1)).sel(neuron=curr_ds.cell_s1).sel(trial=np.arange((i_tt * 100), ((i_tt + 1) * 100)))
                 assert len(np.unique(tmp_ds.trial_type)) == 1, f'trial slice {trial_slice} contains multiple trial types'
@@ -1747,9 +1757,13 @@ def overview_plot_metric_vs_responders(sess_dict, sess_type='sens',
                     stim_vector = np.zeros(tmp_ds.dims['neuron'])
 
                 activity_vector_per_trial = tmp_ds.activity.mean('time')
+                activity_vector_per_trial = (activity_vector_per_trial - activity_vector_per_trial.mean('neuron')) #/ activity_vector_per_trial.std('neuron')
                 assert len(stim_vector) == activity_vector_per_trial.shape[0], f'len stim vector is {len(stim_vector)}, len activity vector is {activity_vector_per_trial.shape[0]}'
                 similarity_array = np.dot(stim_vector, activity_vector_per_trial.values)
                 metric_plot = similarity_array
+        
+            if zscore_metric:
+                metric_plot = (metric_plot - metric_plot.mean()) / metric_plot.std()
 
             pearson_r, pearson_p = scipy.stats.pearsonr(metric_plot, responders)
 
@@ -1762,19 +1776,26 @@ def overview_plot_metric_vs_responders(sess_dict, sess_type='sens',
             curr_ax.annotate(f'r = {pearson_r:.2f}, {p_val}', xy=(0.05, 1.05), xycoords='axes fraction',
                              weight='bold' if p_val != 'n.s.' else 'normal')
             rfv.despine(curr_ax)
-            if metric == 'pop_var':
+            if zscore_metric:
                 curr_ax.set_xlim([-3.5, 3.5])
-            elif metric == 'dot_product_spont_stim':
-                curr_ax.set_xlim([-12, 12]) 
+            else:
+                if metric == 'pop_var':
+                    curr_ax.set_xlim([-4, -1.5])
+                elif metric == 'dot_product_spont_stim':
+                    curr_ax.set_xlim([-12, 12]) 
             if row_id == 2:
                 if metric == 'pop_var':
-                    curr_ax.set_xlabel('Population variance\n(log, zscored)')
+                    curr_ax.set_xlabel('Population variance\n(log' + (' zscored)' if zscore_metric else ')'))
                 elif metric == 'dot_product_spont_stim':
                     curr_ax.set_xlabel('Similarity spont/stim')
             else:
                 curr_ax.set_xticklabels([])
             if col_id == 0:
-                curr_ax.set_ylabel(f'{response_type} responders (%)')
+                if response_type == 'pre_post_corr_s2':
+                    curr_ax.set_ylabel('Correlation\npre/post stim S1')
+                    curr_ax.set_ylim([-0.4, 0.6])
+                else:
+                    curr_ax.set_ylabel(f'{response_type} responders (%)')
             else:
                 pass
 
@@ -1784,3 +1805,29 @@ def overview_plot_metric_vs_responders(sess_dict, sess_type='sens',
         title_use = save_tt_names[i_tt, 0] + append_to_title
         ax_dict[i_tt][0].set_title(title_use, y=1.15, x=1.25,
                                    fontdict={'fontsize': 14, 'fontweight': 'bold', 'color': colour_tt_dict[save_tt_names[i_tt, 0]]})
+
+def plot_responders_per_trial_type(dict_df_responders):
+    df_tmp_result = pd.concat(list(dict_df_responders.values()))
+
+    list_sessions = df_tmp_result['session_name_readable'].unique()
+    list_tt = df_tmp_result['trial_type'].unique()
+    n_trials = 100
+    mat_sorted_responses = {} 
+    for ses in list_sessions:
+        mat_sorted_responses[ses] = np.zeros((len(list_tt), n_trials))
+        for i_tt, tt in enumerate(list_tt):
+            curr_df = df_tmp_result[(df_tmp_result['session_name_readable'] == ses) & (df_tmp_result['trial_type'] == tt)]
+            total_responders = curr_df['percent_positive_responders'] + curr_df['percent_negative_responders']
+            total_responders = np.sort(total_responders)
+            mat_sorted_responses[ses][i_tt, :len(total_responders)] = total_responders
+
+    fig, ax = plt.subplots(3, 2, figsize=(12, 10), gridspec_kw={'wspace': 0.3, 'hspace': 0.5})
+
+    for i_sess, sess in enumerate(list_sessions):
+        curr_ax = ax.flatten()[i_sess]
+        for i_tt, tt in enumerate(list_tt):
+            curr_ax.plot(mat_sorted_responses[sess][i_tt, :], '.-', label=tt, color=colour_tt_dict[tt])
+        curr_ax.legend()
+        curr_ax.set_title(sess)
+        curr_ax.set_xlabel('Sorted trials')
+        curr_ax.set_ylabel('Total responders (%)')
