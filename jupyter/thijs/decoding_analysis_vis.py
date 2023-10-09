@@ -1405,7 +1405,7 @@ def plot_grand_average(ds, ax=None, tt_list=['sham', 'sensory', 'random'],
 
         curr_ax.set_xlabel('Time (s)')
         curr_ax.set_ylabel(r"Grand average $\Delta$F/F")
-        curr_ax.set_ylim([-0.012, 0.008])
+        # curr_ax.set_ylim([-0.012, 0.008])
         curr_ax.set_yticks([-0.01, -0.005, 0, 0.005])
         despine(curr_ax)
 
@@ -1599,23 +1599,28 @@ def suprathreshold_cluster_size_test(p_val_dict, alpha=0.05, n_perm=5000):
 
 def get_percent_cells_responding(session, region='s1', fdr_rate=0.015, 
                                  pre_window=(-1.2, -0.15), post_window=(0.55, 1.65),
+                                 post_window_whisker=(1.1, 2.2),  # whisker has a longer period blanked out after stim (up to 1.08 s post stim)
                                  verbose=0, get_responders_targets=False):
 
     assert len(pre_window) == 2 and len(post_window) == 2, 'pre and post window must be a tuple of length 2'
     assert pre_window[0] < pre_window[1] and post_window[0] < post_window[1], 'pre and post window must be in order'
     assert region in ['s1', 's2'], 'region must be s1 or s2'
     assert pre_window[1] < 0 and post_window[0] > 0, 'pre and post window must be before and after stimulus'
+    assert post_window_whisker[1] > post_window[1], 'post window whisker must be after post window'
     if get_responders_targets and region == 's2':
         get_responders_targets = False 
         print('No targets in S2, so not finding responders per targets.')
     sel_data = session.dataset_selector(region=region, sort_neurons=False, min_t=pre_window[0], 
-                                        max_t=post_window[1], deepcopy=True)
+                                        max_t=post_window_whisker[1], deepcopy=True)
     
     dff = sel_data.activity
     assert dff.dims == ('neuron', 'time', 'trial')
     dff_pre = dff.where(np.logical_and(sel_data.time >= pre_window[0], sel_data.time <= pre_window[1]), drop=True)
     dff_post = dff.where(np.logical_and(sel_data.time >= post_window[0], sel_data.time <= post_window[1]), drop=True)
+    dff_post_whisker = dff.where(np.logical_and(sel_data.time >= post_window_whisker[0], sel_data.time <= post_window_whisker[1]), drop=True)
     assert dff_pre.shape == dff_post.shape, f'dff_pre.shape = {dff_pre.shape}, dff_post.shape = {dff_post.shape}'
+    assert dff_pre.shape == dff_post_whisker.shape, f'dff_pre.shape = {dff_pre.shape}, dff_post_whisker.shape = {dff_post_whisker.shape}'
+    assert len(sel_data.trial) == len(dff_pre.trial)
 
     n_trials = len(dff_pre.trial)
     n_positive_responders = np.zeros(n_trials)
@@ -1625,8 +1630,13 @@ def get_percent_cells_responding(session, region='s1', fdr_rate=0.015,
         n_negative_target_responders = np.zeros(n_trials)
 
     for i_trial in tqdm(dff_pre.trial):
+        current_trial_type = sel_data.sel(trial=i_trial).trial_type.data.item()
+        assert type(current_trial_type) == str, f'trial type {current_trial_type} of type {type(current_trial_type)} not recognised'
+        if current_trial_type == 'whisker':  # whisker has a longer period blanked out after stim (up to 1.08 s post stim), so use different post window
+            dff_post_curr = dff_post_whisker.sel(trial=i_trial)
+        else:
+            dff_post_curr = dff_post.sel(trial=i_trial)
         dff_pre_curr = dff_pre.sel(trial=i_trial)
-        dff_post_curr = dff_post.sel(trial=i_trial)
         assert dff_post_curr.dims == ('neuron', 'time') and dff_pre_curr.dims == ('neuron', 'time')
         p_vals_neurons = np.zeros(len(dff_pre_curr.neuron))
         for i_neuron, neuron in enumerate(dff_pre_curr.neuron):
@@ -1691,18 +1701,28 @@ def overview_plot_metric_vs_responders(sess_dict, sess_type='sens',
                                        response_type='positive',
                                        append_to_title=''):
     n_sess = 6
-    n_tts = 3
+    n_tts = 4
+    assert n_tts in [3, 4]
     assert len(sess_dict) == n_sess
     assert sess_type in ['sens', 'proj'], f'sess_type must be sens or proj, not {sess_type}'
     assert metric in ['pop_var', 'dot_product_spont_stim'], f'metric can not be {metric}'
     assert response_type in ['positive', 'negative', 'total', 'pre_post_corr_s2'], f'response_type must be positive, negative or total, not {response_type}'
     assert ignore_whisker, 'Not implemented yet'
 
-    fig = plt.figure(figsize=(12, 6))
+    fig = plt.figure(figsize=(4 * n_tts, 6))
     gs_tt = {}
-    gs_tt[0] = plt.GridSpec(3, 2, left=0.03, right=0.3, top=0.95, bottom=0.05, wspace=0.3, hspace=0.3)
-    gs_tt[1] = plt.GridSpec(3, 2, left=0.36, right=0.63, top=0.95, bottom=0.05, wspace=0.3, hspace=0.3)
-    gs_tt[2] = plt.GridSpec(3, 2, left=0.7, right=0.97, top=0.95, bottom=0.05, wspace=0.3, hspace=0.3)
+
+    if n_tts == 3:    
+        gs_tt[0] = plt.GridSpec(3, 2, left=0.03, right=0.3, top=0.95, bottom=0.05, wspace=0.3, hspace=0.3)
+        gs_tt[1] = plt.GridSpec(3, 2, left=0.36, right=0.63, top=0.95, bottom=0.05, wspace=0.3, hspace=0.3)
+        gs_tt[2] = plt.GridSpec(3, 2, left=0.7, right=0.97, top=0.95, bottom=0.05, wspace=0.3, hspace=0.3)
+    elif n_tts == 4:
+        gs_tt[0] = plt.GridSpec(3, 2, left=0.03, right=0.22, top=0.95, bottom=0.05, wspace=0.3, hspace=0.3)
+        gs_tt[1] = plt.GridSpec(3, 2, left=0.28, right=0.47, top=0.95, bottom=0.05, wspace=0.3, hspace=0.3)
+        gs_tt[2] = plt.GridSpec(3, 2, left=0.53, right=0.72, top=0.95, bottom=0.05, wspace=0.3, hspace=0.3)
+        gs_tt[3] = plt.GridSpec(3, 2, left=0.79, right=0.99, top=0.95, bottom=0.05, wspace=0.3, hspace=0.3)
+    else:
+        assert False, f'n_tts must be 3 or 4, not {n_tts}'
 
     ax_dict = {i_tt: {} for i_tt in range(n_tts)}
     save_tt_names = np.zeros((n_tts, n_sess), dtype=np.object)
