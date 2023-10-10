@@ -1709,10 +1709,13 @@ def overview_plot_metric_vs_responders(sess_dict, sess_type='sens',
                                        response_type='positive',
                                        append_to_title=''):
     n_sess = 6
-    n_tts = 4
+    assert sess_type in ['sens', 'proj'], f'sess_type must be sens or proj, not {sess_type}'
+    if sess_type == 'sens':
+        n_tts = 4
+    elif sess_type == 'proj':
+        n_tts = 3
     assert n_tts in [3, 4]
     assert len(sess_dict) == n_sess
-    assert sess_type in ['sens', 'proj'], f'sess_type must be sens or proj, not {sess_type}'
     assert metric in ['pop_var', 'dot_product_spont_stim'], f'metric can not be {metric}'
     assert response_type in ['positive', 'negative', 'total', 'pre_post_corr_s2'], f'response_type must be positive, negative or total, not {response_type}'
     assert ignore_whisker, 'Not implemented yet'
@@ -1857,5 +1860,5 @@ def plot_responders_per_trial_type(dict_df_responders):
             curr_ax.plot(mat_sorted_responses[sess][i_tt, :], '.-', label=tt, color=colour_tt_dict[tt])
         curr_ax.legend()
         curr_ax.set_title(sess)
-        curr_ax.set_xlabel('Sorted trials')
+        curr_ax.set_xlabel('Sorted trial id')
         curr_ax.set_ylabel('Total responders (%)')
