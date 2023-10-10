@@ -36,7 +36,7 @@ def compute_responders(save_folder='/home/tplas/repos/S1S2_mechanisms/jupyter/th
         dict_df_responders['meta_data'] = meta_data_new
         length_windows = meta_data_new['length_windows']
         stat_test = meta_data_new['stat_test']
-        filename = f'df_responders_{region_use}_{stat_test}_window-{length_windows}ms.pkl'
+        filename = f'df_responders_{region_use}_{stat_test}_window-{length_windows}-timepoints.pkl'
         filepath = os.path.join(save_folder, filename)
         with open(filepath, 'wb') as f:
             pickle.dump(dict_df_responders, f)

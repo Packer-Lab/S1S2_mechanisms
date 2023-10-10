@@ -1613,12 +1613,9 @@ def get_percent_cells_responding(session, region='s1', fdr_rate=0.01,
         print('No targets in S2, so not finding responders per targets.')
     sel_data = session.dataset_selector(region=region, sort_neurons=False, min_t=pre_window[0], 
                                         max_t=post_window_whisker[1], deepcopy=True)
-    assert post_window[1] - post_window[0] == post_window_whisker[1] - post_window_whisker[0], 'post windows must be same length'
-    assert post_window[1] - post_window[0] == pre_window[1] - pre_window[0], 'pre and post windows must be same length'
-    length_windows = int(1000 * (post_window[1] - post_window[0]))  # in ms
     meta_data = {'pre_window': pre_window, 'post_window': post_window, 'post_window_whisker': post_window_whisker,
                  'fdr_rate': fdr_rate, 'region': region, 'get_responders_targets': get_responders_targets,
-                 'stat_test': stat_test, 'length_windows': length_windows}
+                 'stat_test': stat_test}
     dff = sel_data.activity
     assert dff.dims == ('neuron', 'time', 'trial')
     dff_pre = dff.where(np.logical_and(sel_data.time >= pre_window[0], sel_data.time <= pre_window[1]), drop=True)
@@ -1627,7 +1624,9 @@ def get_percent_cells_responding(session, region='s1', fdr_rate=0.01,
     assert dff_pre.shape == dff_post.shape, f'dff_pre.shape = {dff_pre.shape}, dff_post.shape = {dff_post.shape}'
     assert dff_pre.shape == dff_post_whisker.shape, f'dff_pre.shape = {dff_pre.shape}, dff_post_whisker.shape = {dff_post_whisker.shape}'
     assert len(sel_data.trial) == len(dff_pre.trial)
-
+    n_timepoints = len(dff_pre.time)
+    assert len(dff_pre.time) == len(dff_post.time) and len(dff_pre.time) == len(dff_post_whisker.time)
+    meta_data['length_windows'] = n_timepoints
     n_trials = len(dff_pre.trial)
     n_positive_responders = np.zeros(n_trials)
     n_negative_responders = np.zeros(n_trials)
