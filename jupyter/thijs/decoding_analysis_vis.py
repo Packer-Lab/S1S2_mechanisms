@@ -24,6 +24,8 @@ from urllib import response
 import numpy as np 
 import matplotlib.pyplot as plt 
 import seaborn as sns
+sns.set_palette('colorblind')
+
 import pandas as pd
 sys.path.append(vape_path)
 # from utils.utils_funcs import correct_s2p_combined 
@@ -1648,6 +1650,9 @@ def get_percent_cells_responding(session, region='s1', fdr_rate=0.01,
             if stat_test == 'wilcoxon':
                 p_vals_neurons[i_neuron] = scipy.stats.wilcoxon(dff_pre_curr.sel(neuron=neuron).data, 
                                                                 dff_post_curr.sel(neuron=neuron).data)[1]
+            elif stat_test == 'ttest':
+                p_vals_neurons[i_neuron] = scipy.stats.ttest_ind(dff_pre_curr.sel(neuron=neuron).data, 
+                                                                 dff_post_curr.sel(neuron=neuron).data)[1]
             else:
                 assert False, f'stat test {stat_test} not recognised'
         significance_neurons, p_vals_neurons_corr, _, _ = multitest.multipletests(p_vals_neurons, 
@@ -1704,7 +1709,6 @@ def get_percent_cells_responding(session, region='s1', fdr_rate=0.01,
 
 def overview_plot_metric_vs_responders(sess_dict, sess_type='sens', 
                                        dict_df_responders=None,
-                                       ignore_whisker=True,
                                        metric='pop_var', zscore_metric=False,
                                        response_type='positive',
                                        append_to_title=''):
@@ -1718,8 +1722,7 @@ def overview_plot_metric_vs_responders(sess_dict, sess_type='sens',
     assert len(sess_dict) == n_sess
     assert metric in ['pop_var', 'dot_product_spont_stim'], f'metric can not be {metric}'
     assert response_type in ['positive', 'negative', 'total', 'pre_post_corr_s2'], f'response_type must be positive, negative or total, not {response_type}'
-    assert ignore_whisker, 'Not implemented yet'
-
+   
     fig = plt.figure(figsize=(4 * n_tts, 6))
     gs_tt = {}
 
@@ -1837,7 +1840,7 @@ def overview_plot_metric_vs_responders(sess_dict, sess_type='sens',
         ax_dict[i_tt][0].set_title(title_use, y=1.15, x=1.25,
                                    fontdict={'fontsize': 14, 'fontweight': 'bold', 'color': colour_tt_dict[save_tt_names[i_tt, 0]]})
 
-def plot_responders_per_trial_type(dict_df_responders):
+def plot_sorted_responders_per_trial_type(dict_df_responders):
     df_tmp_result = pd.concat(list(dict_df_responders.values()))
 
     list_sessions = df_tmp_result['session_name_readable'].unique()
@@ -1862,3 +1865,181 @@ def plot_responders_per_trial_type(dict_df_responders):
         curr_ax.set_title(sess)
         curr_ax.set_xlabel('Sorted trial id')
         curr_ax.set_ylabel('Total responders (%)')
+
+def plot_average_responders_per_trial_type(dict_df_responders, sess_type='sens', ax=None,
+                                           list_tt_ignore=[]):
+    df_responders_all = pd.concat(list(dict_df_responders[sess_type].values()))
+    df_responders_all = df_responders_all.drop(['n_positive_responders', 'n_negative_responders', 'trial'], axis=1)
+    for col_tmp in ['n_positive_responders_targets', 'n_negative_responders_targets']:
+        if col_tmp in df_responders_all.columns:
+            df_responders_all = df_responders_all.drop(col_tmp, axis=1)
+    df_responders_all['percent_total_responders'] = df_responders_all['percent_positive_responders'] + df_responders_all['percent_negative_responders']
+    df_responders_av_sess = df_responders_all.groupby(['session_name_readable', 'trial_type',]).mean()
+    df_responders_av_sess = df_responders_av_sess.reset_index()
+    df_responders_av_sess_sham = df_responders_av_sess[df_responders_av_sess['trial_type'] == 'sham']
+    dict_responders_av_sham = {df_responders_av_sess_sham['session_name_readable'].values[i]: df_responders_av_sess_sham['percent_total_responders'].values[i] for i in range(len(df_responders_av_sess_sham))}
+    df_responders_all_normalised = df_responders_all.copy()
+    columns_normalise = ['percent_positive_responders', 'percent_negative_responders', 'percent_total_responders']
+    for col in columns_normalise:
+        df_responders_all_normalised[col] = df_responders_all_normalised[col] / df_responders_all_normalised['session_name_readable'].map(dict_responders_av_sham)
+
+    if len(list_tt_ignore) > 0:
+        df_responders_all_normalised = df_responders_all_normalised[~df_responders_all_normalised['trial_type'].isin(list_tt_ignore)]
+
+    if ax is None:
+        fig, ax  = plt.subplots(1, 2, figsize=(8, 3), gridspec_kw={'wspace': 0.4})
+    sns.barplot(data=df_responders_all_normalised, x='trial_type', y='percent_positive_responders', 
+                ci=95, ax=ax[0], palette=colour_tt_dict)
+    sns.barplot(data=df_responders_all_normalised, x='trial_type', y='percent_negative_responders', 
+                ci=95, ax=ax[1], palette=colour_tt_dict)
+    ax[0].set_ylabel('Pos.responders (norm. %)')
+    ax[1].set_ylabel('Neg. responders (norm. %)')
+    for i_ax in range(2):
+        ax[i_ax].set_xlabel('')
+        ax[i_ax].set_ylim([0, 2.5])
+        if sess_type == 'proj':
+            ax[i_ax].set_xticklabels(ax[i_ax].get_xticklabels(), rotation=30)
+    # ax[0].title('S2 responding cells', weight='bold')
+
+
+def overview_plot_correlations(sess_dict, sess_type='sens', 
+                               comparison='pre_vs_post',
+                               append_to_title=''):
+    n_sess = 6
+    assert sess_type in ['sens', 'proj'], f'sess_type must be sens or proj, not {sess_type}'
+    if sess_type == 'sens':
+        n_tts = 4
+    elif sess_type == 'proj':
+        n_tts = 3
+    assert n_tts in [3, 4]
+    assert len(sess_dict) == n_sess
+    assert comparison in ['pre_vs_post', 's1_vs_s2']
+
+    fig = plt.figure(figsize=(4 * n_tts, 6))
+    gs_tt = {}
+
+    if n_tts == 3:    
+        gs_tt[0] = plt.GridSpec(3, 2, left=0.03, right=0.28, top=0.95, bottom=0.05, wspace=0.3, hspace=0.3)
+        gs_tt[1] = plt.GridSpec(3, 2, left=0.37, right=0.62, top=0.95, bottom=0.05, wspace=0.3, hspace=0.3)
+        gs_tt[2] = plt.GridSpec(3, 2, left=0.72, right=0.97, top=0.95, bottom=0.05, wspace=0.3, hspace=0.3)
+    elif n_tts == 4:
+        gs_tt[0] = plt.GridSpec(3, 2, left=0.03, right=0.22, top=0.95, bottom=0.05, wspace=0.3, hspace=0.3)
+        gs_tt[1] = plt.GridSpec(3, 2, left=0.28, right=0.47, top=0.95, bottom=0.05, wspace=0.3, hspace=0.3)
+        gs_tt[2] = plt.GridSpec(3, 2, left=0.53, right=0.72, top=0.95, bottom=0.05, wspace=0.3, hspace=0.3)
+        gs_tt[3] = plt.GridSpec(3, 2, left=0.79, right=0.99, top=0.95, bottom=0.05, wspace=0.3, hspace=0.3)
+    else:
+        assert False, f'n_tts must be 3 or 4, not {n_tts}'
+
+    ax_dict = {i_tt: {} for i_tt in range(n_tts)}
+    save_tt_names = np.zeros((n_tts, n_sess), dtype=np.object)
+    global_min_x, global_max_x = np.inf, -np.inf
+    global_min_y, global_max_y = np.inf, -np.inf
+    for sess_id in range(n_sess):
+        curr_ds = sess_dict[sess_id].full_ds
+        if sess_type == 'sens':
+            assert len(curr_ds.trial_type) == 400, f'len trial type is {len(curr_ds.trial_type)}'
+        elif sess_type == 'proj':
+            assert len(curr_ds.trial_type) == 300, f'len trial type is {len(curr_ds.trial_type)}'
+        
+        for i_tt in range(n_tts):
+            trial_slice = slice(i_tt * 100, (i_tt + 1) * 100) 
+            assert len(np.unique(curr_ds.trial_type[trial_slice])) == 1, f'trial slice {trial_slice} contains multiple trial types'
+            tt = curr_ds.trial_type[trial_slice].data[0]
+            save_tt_names[i_tt, sess_id] = tt
+
+            ds_pre = curr_ds.sel(time=slice(-0.6, -0.1)).sel(trial=np.arange((i_tt * 100), ((i_tt + 1) * 100)))
+            if tt == 'whisker':
+                ds_post = curr_ds.sel(time=slice(1.1, 1.6)).sel(trial=np.arange((i_tt * 100), ((i_tt + 1) * 100)))
+            else:
+                ds_post = curr_ds.sel(time=slice(0.6, 1.1)).sel(trial=np.arange((i_tt * 100), ((i_tt + 1) * 100)))
+            # return ds_pre
+            assert len(np.unique(ds_pre.trial_type)) == 1, f'trial slice {trial_slice} contains multiple trial types'
+            assert np.unique(ds_pre.trial_type)[0] == tt, f'trial slice {trial_slice} contains multiple trial types'
+            # ds_pre = ds_pre.mean('time')
+            # ds_post = ds_post.mean('time')
+            ds_pre_s1 = ds_pre.sel(neuron=ds_pre.cell_s1).mean('time')
+            ds_post_s1 = ds_post.sel(neuron=ds_post.cell_s1).mean('time')
+            ds_pre_s2 = ds_pre.sel(neuron=np.logical_not(ds_pre.cell_s1)).mean('time')
+            ds_post_s2 = ds_post.sel(neuron=np.logical_not(ds_post.cell_s1)).mean('time')
+   
+            if comparison == 'pre_vs_post':
+                cc_trials = {x: np.zeros(ds_pre.dims['trial']) for x in ['s1', 's2']}
+            elif comparison == 's1_vs_s2':
+                cc_trials = {x: np.zeros(ds_pre.dims['trial']) for x in ['pre', 'post']}
+
+            for i_trial in range(ds_pre.dims['trial']):
+                if comparison == 'pre_vs_post':
+                    cc_trials['s1'][i_trial] = np.corrcoef(ds_pre_s1.isel(trial=i_trial).activity, ds_post_s1.isel(trial=i_trial).activity)[0, 1]
+                    cc_trials['s2'][i_trial] = np.corrcoef(ds_pre_s2.isel(trial=i_trial).activity, ds_post_s2.isel(trial=i_trial).activity)[0, 1]
+                elif comparison == 's1_vs_s2':
+                    cc_trials['pre'][i_trial] = np.corrcoef(ds_pre_s1.isel(trial=i_trial).activity, ds_pre_s2.isel(trial=i_trial).activity)[0, 1]
+                    cc_trials['post'][i_trial] = np.corrcoef(ds_post_s1.isel(trial=i_trial).activity, ds_post_s2.isel(trial=i_trial).activity)[0, 1]
+
+            if comparison == 'pre_vs_post':
+                stat_x = cc_trials['s1']
+                stat_y = cc_trials['s2']
+                xlabel = 'Corr. pre/\npost stim S1'
+                ylabel = 'Corr. pre/\npost stim S2'
+            elif comparison == 's1_vs_s2': 
+                stat_x = cc_trials['pre']
+                stat_y = cc_trials['post']
+                xlabel = 'Corr. pre stim \nS1/S2'
+                ylabel = 'Corr. post stim \nS1/S2'
+                
+            pearson_r, pearson_p = scipy.stats.pearsonr(stat_x, stat_y)
+            ## linear regression to get slope:
+            slope, intercept, r_value, p_value, std_err = scipy.stats.linregress(stat_x, stat_y)
+            assert np.isclose(pearson_p, p_value)
+            # return stat_x, stat_y, pearson_r, pearson_p, cc_trials, ds_pre_s1, ds_post_s1, ds_pre_s2, ds_post_s2, curr_ds
+            row_id = sess_id // 2
+            col_id = sess_id % 2
+            ax_dict[i_tt][sess_id] = fig.add_subplot(gs_tt[i_tt][row_id, col_id])
+            curr_ax = ax_dict[i_tt][sess_id]
+            curr_ax.plot(stat_x, stat_y, '.', markersize=6, color=colour_tt_dict[tt])
+            ## plot linear regression line:
+            x = np.linspace(np.min(stat_x), np.max(stat_x), 100)
+            y = slope * x + intercept
+            curr_ax.plot(x, y, color='k')
+            p_val = rfv.readable_p_significance_statement(pearson_p, n_bonf=6)[1]
+            curr_ax.annotate(f'r = {pearson_r:.2f}, {p_val}', xy=(0.05, 1.05), xycoords='axes fraction',
+                             weight='bold' if p_val != 'n.s.' else 'normal')
+            curr_ax.annotate(f'sl: {slope:.2f}', xy=(1, 0), xycoords='axes fraction',
+                             ha='right', va='bottom')
+            rfv.despine(curr_ax)
+            # curr_ax.set_xlim([-.5, .7])
+            # curr_ax.set_ylim([-.5, .7])
+            if global_min_x > np.min(stat_x):
+                global_min_x = np.min(stat_x)
+            if global_max_x < np.max(stat_x):
+                global_max_x = np.max(stat_x)
+            if global_min_y > np.min(stat_y):
+                global_min_y = np.min(stat_y)
+            if global_max_y < np.max(stat_y):
+                global_max_y = np.max(stat_y)
+            if row_id == 2:
+                curr_ax.set_xlabel(xlabel)
+            else:
+                curr_ax.set_xticklabels([])
+            if col_id == 0:
+                curr_ax.set_ylabel(ylabel)
+            else:
+                curr_ax.set_yticklabels([])
+
+    global_min_combined = np.min([global_min_x, global_min_y])
+    global_max_combined = np.max([global_max_x, global_max_y])
+    for i_tt in range(n_tts):
+        for sess_id in range(n_sess):
+            curr_ax = ax_dict[i_tt][sess_id]
+            # curr_ax.plot([global_min_x, global_max_x], [global_min_x, global_max_x],
+            #               color='grey', linestyle='--', zorder=-1)
+            # curr_ax.set_xlim([global_min_x, global_max_x])
+            # curr_ax.set_ylim([global_min_y, global_max_y])
+            curr_ax.plot([global_min_combined, global_max_combined], [global_min_combined, global_max_combined],
+                          color='grey', linestyle='--', zorder=-1)
+            curr_ax.set_xlim([global_min_combined, global_max_combined])
+            curr_ax.set_ylim([global_min_combined, global_max_combined])
+        fig.align_ylabels(list(ax_dict[i_tt].values())[::2])
+        assert len(np.unique(save_tt_names[i_tt, :])) == 1, f'trial types are not the same across sessions for tt {i_tt}'
+        title_use = save_tt_names[i_tt, 0] + append_to_title
+        ax_dict[i_tt][0].set_title(title_use, y=1.15, x=1.25,
+                                   fontdict={'fontsize': 14, 'fontweight': 'bold', 'color': colour_tt_dict[save_tt_names[i_tt, 0]]})

@@ -45,4 +45,5 @@ def compute_responders(save_folder='/home/tplas/repos/S1S2_mechanisms/jupyter/th
     all_sess = None 
 
 if __name__ == '__main__':
-    compute_responders()
+    compute_responders(stat_test='wilcoxon', pre_window=(-0.7, -0.15), post_window=(0.55, 1.1),
+                     post_window_whisker=(1.1, 1.65))
