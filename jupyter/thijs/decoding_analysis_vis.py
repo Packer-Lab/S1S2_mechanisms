@@ -1597,10 +1597,11 @@ def suprathreshold_cluster_size_test(p_val_dict, alpha=0.05, n_perm=5000):
 
     return sign_dict
 
-def get_percent_cells_responding(session, region='s1', fdr_rate=0.015, 
+def get_percent_cells_responding(session, region='s1', fdr_rate=0.01, 
                                  pre_window=(-1.2, -0.15), post_window=(0.55, 1.65),
                                  post_window_whisker=(1.1, 2.2),  # whisker has a longer period blanked out after stim (up to 1.08 s post stim)
-                                 verbose=0, get_responders_targets=False):
+                                 verbose=0, get_responders_targets=False,
+                                 stat_test='wilcoxon'):
 
     assert len(pre_window) == 2 and len(post_window) == 2, 'pre and post window must be a tuple of length 2'
     assert pre_window[0] < pre_window[1] and post_window[0] < post_window[1], 'pre and post window must be in order'
@@ -1612,7 +1613,12 @@ def get_percent_cells_responding(session, region='s1', fdr_rate=0.015,
         print('No targets in S2, so not finding responders per targets.')
     sel_data = session.dataset_selector(region=region, sort_neurons=False, min_t=pre_window[0], 
                                         max_t=post_window_whisker[1], deepcopy=True)
-    
+    assert post_window[1] - post_window[0] == post_window_whisker[1] - post_window_whisker[0], 'post windows must be same length'
+    assert post_window[1] - post_window[0] == pre_window[1] - pre_window[0], 'pre and post windows must be same length'
+    length_windows = int(1000 * (post_window[1] - post_window[0]))  # in ms
+    meta_data = {'pre_window': pre_window, 'post_window': post_window, 'post_window_whisker': post_window_whisker,
+                 'fdr_rate': fdr_rate, 'region': region, 'get_responders_targets': get_responders_targets,
+                 'stat_test': stat_test, 'length_windows': length_windows}
     dff = sel_data.activity
     assert dff.dims == ('neuron', 'time', 'trial')
     dff_pre = dff.where(np.logical_and(sel_data.time >= pre_window[0], sel_data.time <= pre_window[1]), drop=True)
@@ -1640,8 +1646,11 @@ def get_percent_cells_responding(session, region='s1', fdr_rate=0.015,
         assert dff_post_curr.dims == ('neuron', 'time') and dff_pre_curr.dims == ('neuron', 'time')
         p_vals_neurons = np.zeros(len(dff_pre_curr.neuron))
         for i_neuron, neuron in enumerate(dff_pre_curr.neuron):
-            p_vals_neurons[i_neuron] = scipy.stats.wilcoxon(dff_pre_curr.sel(neuron=neuron).data, 
-                                                            dff_post_curr.sel(neuron=neuron).data)[1]
+            if stat_test == 'wilcoxon':
+                p_vals_neurons[i_neuron] = scipy.stats.wilcoxon(dff_pre_curr.sel(neuron=neuron).data, 
+                                                                dff_post_curr.sel(neuron=neuron).data)[1]
+            else:
+                assert False, f'stat test {stat_test} not recognised'
         significance_neurons, p_vals_neurons_corr, _, _ = multitest.multipletests(p_vals_neurons, 
                                                                                   alpha=fdr_rate, method='fdr_bh',
                                                                                   is_sorted=False, returnsorted=False)
@@ -1692,7 +1701,7 @@ def get_percent_cells_responding(session, region='s1', fdr_rate=0.015,
         df_results['n_positive_responders_targets'] = n_positive_target_responders
         df_results['n_negative_responders_targets'] = n_negative_target_responders
 
-    return percent_positive_responders, percent_negative_responders, sel_data, df_results
+    return percent_positive_responders, percent_negative_responders, sel_data, df_results, meta_data
 
 def overview_plot_metric_vs_responders(sess_dict, sess_type='sens', 
                                        dict_df_responders=None,
