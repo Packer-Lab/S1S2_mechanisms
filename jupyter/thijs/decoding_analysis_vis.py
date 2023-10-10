@@ -1387,7 +1387,12 @@ def plot_grand_average(ds, ax=None, tt_list=['sham', 'sensory', 'random'],
         time_ax = ds.activity.time 
         grand_av = ds.activity.where(ds.trial_type == tt).mean(['neuron', 'trial'])
         if blank_ps:
-            ps_period = np.logical_and(time_ax >= 0, time_ax <= 0.3)
+            if tt == 'whisker':
+                ps_period = np.logical_and(time_ax >= 0, time_ax <= 1.083)
+            elif tt == 'sham':
+                ps_period = np.zeros_like(time_ax, dtype=bool)
+            else:
+                ps_period = np.logical_and(time_ax >= 0, time_ax <= 0.3)
         grand_av[ps_period] = np.nan
         if smooth_mean:
             plot_av = smooth_trace_with_artefact(grand_av)
@@ -1401,14 +1406,16 @@ def plot_grand_average(ds, ax=None, tt_list=['sham', 'sensory', 'random'],
             curr_ax = ax
         if plot_zero:
             curr_ax.plot(time_ax, np.zeros(len(time_ax)), linestyle=':', c='grey')        
-        curr_ax.plot(time_ax, plot_av, label=(label_tt_dict[tt] if tt != 'sham' or legend_profile == 0 else None), 
+        curr_ax.plot(time_ax, plot_av, 
+                    label=label_tt_dict[tt],
+                    #  label=(label_tt_dict[tt] if tt != 'sham' or legend_profile == 0 else None), 
                 linewidth=2, color=colour_tt_dict[tt])
         curr_ax.fill_between(time_ax, plot_av - total_ci, plot_av + total_ci, alpha=0.3, facecolor=colour_tt_dict[tt])
 
         curr_ax.set_xlabel('Time (s)')
         curr_ax.set_ylabel(r"Grand average $\Delta$F/F")
         # curr_ax.set_ylim([-0.012, 0.008])
-        curr_ax.set_yticks([-0.01, -0.005, 0, 0.005])
+        # curr_ax.set_yticks([-0.01, -0.005, 0, 0.005])
         despine(curr_ax)
 
 
@@ -1441,6 +1448,8 @@ def plot_grand_average(ds, ax=None, tt_list=['sham', 'sensory', 'random'],
             ax.legend(frameon=False, loc='lower left')
         elif legend_profile == 1:
             ax.legend(frameon=False, loc='lower left', ncol=2)
+        elif legend_profile == 2:
+            ax.legend(frameon=False, loc='upper left')
     
 def plot_significance_array(array, ax=None, color_tt=None, time_ax=None, bottom_sign_bar=1,
                             text_s=None, text_x=None, text_y=None, text_c=None):
@@ -1867,9 +1876,9 @@ def plot_sorted_responders_per_trial_type(dict_df_responders):
         curr_ax.set_ylabel('Total responders (%)')
 
 def plot_average_responders_per_trial_type(dict_df_responders, sess_type='sens', ax=None,
-                                           list_tt_ignore=[]):
+                                           list_tt_ignore=[], list_trial_numbers_ignore=[]):
     df_responders_all = pd.concat(list(dict_df_responders[sess_type].values()))
-    df_responders_all = df_responders_all.drop(['n_positive_responders', 'n_negative_responders', 'trial'], axis=1)
+    df_responders_all = df_responders_all.drop(['n_positive_responders', 'n_negative_responders'], axis=1)
     for col_tmp in ['n_positive_responders_targets', 'n_negative_responders_targets']:
         if col_tmp in df_responders_all.columns:
             df_responders_all = df_responders_all.drop(col_tmp, axis=1)
@@ -1885,6 +1894,9 @@ def plot_average_responders_per_trial_type(dict_df_responders, sess_type='sens',
 
     if len(list_tt_ignore) > 0:
         df_responders_all_normalised = df_responders_all_normalised[~df_responders_all_normalised['trial_type'].isin(list_tt_ignore)]
+    if len(list_trial_numbers_ignore) > 0:
+        df_responders_all_normalised = df_responders_all_normalised[~df_responders_all_normalised['trial'].isin(list_trial_numbers_ignore)]
+
 
     if ax is None:
         fig, ax  = plt.subplots(1, 2, figsize=(8, 3), gridspec_kw={'wspace': 0.4})
@@ -1899,8 +1911,8 @@ def plot_average_responders_per_trial_type(dict_df_responders, sess_type='sens',
         ax[i_ax].set_ylim([0, 2.5])
         if sess_type == 'proj':
             ax[i_ax].set_xticklabels(ax[i_ax].get_xticklabels(), rotation=30)
-    # ax[0].title('S2 responding cells', weight='bold')
 
+    return df_responders_all_normalised
 
 def overview_plot_correlations(sess_dict, sess_type='sens', 
                                comparison='pre_vs_post',
