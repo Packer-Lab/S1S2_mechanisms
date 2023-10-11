@@ -11,7 +11,7 @@ def compute_responders(save_folder='/home/tplas/repos/S1S2_mechanisms/jupyter/th
     all_sess = {}
     for st in ['sens', 'proj']:
         all_sess[st] = dav.AllSessions(sess_type=st)
-     
+    print(f'Starting to compute responders, using stat test {stat_test} and FDR rate {fdr_rate} and windows: pre {pre_window}, post {post_window}, post_whisker {post_window_whisker}')
     ## Compute responders, per region 
     n_sessions = 6
     for region_use in ['s1', 's2']:
@@ -32,11 +32,12 @@ def compute_responders(save_folder='/home/tplas/repos/S1S2_mechanisms/jupyter/th
                 else:
                     assert meta_data_prev == meta_data_new 
                     meta_data_prev = meta_data_new
-        
+        fdr_rate_sci = f'{fdr_rate:.2e}' 
+        fdr_rate_sci = fdr_rate_sci[0] + 'e' + fdr_rate_sci.split('e')[1].replace('+', '')
         dict_df_responders['meta_data'] = meta_data_new
         length_windows = meta_data_new['length_windows']
         stat_test = meta_data_new['stat_test']
-        filename = f'df_responders_{region_use}_{stat_test}_window-{length_windows}-timepoints.pkl'
+        filename = f'df_responders_{region_use}_{stat_test}_window-{length_windows}-timepoints_fdr-{fdr_rate_sci}.pkl'
         filepath = os.path.join(save_folder, filename)
         with open(filepath, 'wb') as f:
             pickle.dump(dict_df_responders, f)
@@ -45,5 +46,7 @@ def compute_responders(save_folder='/home/tplas/repos/S1S2_mechanisms/jupyter/th
     all_sess = None 
 
 if __name__ == '__main__':
-    compute_responders(stat_test='wilcoxon', pre_window=(-0.7, -0.15), post_window=(0.55, 1.1),
-                     post_window_whisker=(1.1, 1.65))
+    for fdr in [0.015, 0.02, 0.3]:
+        compute_responders(stat_test='wilcoxon', 
+                        #    pre_window=(-0.7, -0.15), post_window=(0.55, 1.1), post_window_whisker=(1.1, 1.65), 
+                        fdr_rate=fdr)
