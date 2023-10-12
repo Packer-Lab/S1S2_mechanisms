@@ -601,6 +601,16 @@ class SimpleSession():
         Use time av response, region specific, neuron subselection.
         Use CV, LDA?, return mean test accuracy"""
         ## make time-averaged data
+        assert len(tt_list) == 2, 'only implemented for 2 tt'
+        assert tt_list[0] != tt_list[1], 'only implemented for 2 tt'    
+        assert tt_list[1] == 'sham', 'only implemented for sham as second tt'
+        if tt_list[0] == 'whisker':
+            if t_min < 1.1:
+                diff_time = 1.1 - t_min
+                t_min = 1.1
+                t_max += diff_time
+                print(f'WARNING: time window adjusted to {t_min} - {t_max} to avoid whisker stim')
+
         self.create_time_averaged_response(sort_neurons=False, region=region,
                                             subtract_pcs=subtract_pcs,
                                            subtract_pop_av=False, trial_type_list=tt_list,
