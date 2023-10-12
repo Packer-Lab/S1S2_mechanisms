@@ -1888,7 +1888,7 @@ def plot_average_responders_per_trial_type(dict_df_responders, sess_type='sens',
                                            list_tt_ignore=[], list_trial_numbers_ignore=[],
                                            stat_test_compare='mannwhitneyu', n_bonf=None,
                                            plot_pos_neg_separately=True, plot_stats=True, plot_non_sham_stats=False,
-                                           plot_legend=True, add_y=None):
+                                           plot_legend=True, add_y=None, normalise_5_percent=True):
     
     df_responders_all = pd.concat(list(dict_df_responders[sess_type].values()),)
     df_responders_all = df_responders_all.drop(['n_positive_responders', 'n_negative_responders'], axis=1)
@@ -1904,7 +1904,8 @@ def plot_average_responders_per_trial_type(dict_df_responders, sess_type='sens',
     columns_normalise = ['percent_positive_responders', 'percent_negative_responders', 'percent_total_responders']
     for col in columns_normalise:
         df_responders_all_normalised[col] = df_responders_all_normalised[col] / df_responders_all_normalised['session_name_readable'].map(dict_responders_av_sham)
-
+        if normalise_5_percent:
+            df_responders_all_normalised[col] = df_responders_all_normalised[col] * 5
     if len(list_tt_ignore) > 0:
         df_responders_all_normalised = df_responders_all_normalised[~df_responders_all_normalised['trial_type'].isin(list_tt_ignore)]
     if len(list_trial_numbers_ignore) > 0:
@@ -1922,6 +1923,8 @@ def plot_average_responders_per_trial_type(dict_df_responders, sess_type='sens',
             dict_responders_sem[tt][col] = 1.96 * curr_df[col].std() / np.sqrt(len(curr_df[col]))
         assert np.isclose(dict_responders_av[tt]['percent_total_responders'], dict_responders_av[tt]['percent_positive_responders'] + dict_responders_av[tt]['percent_negative_responders']), f'total responders : {dict_responders_av[tt]["percent_total_responders"]}, positive responders: {dict_responders_av[tt]["percent_positive_responders"]}, negative responders: {dict_responders_av[tt]["percent_negative_responders"]}'
 
+    unique_trial_types = df_responders_all_normalised['trial_type'].unique()
+        
     if plot_stats:
         ## Use total to compute statistics between trial types
         if stat_test_compare == 'mannwhitneyu':
@@ -1929,7 +1932,6 @@ def plot_average_responders_per_trial_type(dict_df_responders, sess_type='sens',
         else:
             assert False, 'not implemeneted'
         p_val_dict = {}
-        unique_trial_types = df_responders_all_normalised['trial_type'].unique()
         for itt1, tt1 in enumerate(unique_trial_types):
             for itt2, tt2 in enumerate(unique_trial_types):
                 if tt1 == tt2:
@@ -1953,7 +1955,10 @@ def plot_average_responders_per_trial_type(dict_df_responders, sess_type='sens',
         ax[1].set_ylabel('Neg. responders (norm. %)')
         for i_ax in range(2):
             ax[i_ax].set_xlabel('')
-            ax[i_ax].set_ylim([0, 2.5])
+            if normalise_5_percent:
+                ax[i_ax].set_ylim([0, 12.5])
+            else:
+                ax[i_ax].set_ylim([0, 2.5])
             if sess_type == 'proj':
                 ax[i_ax].set_xticklabels(ax[i_ax].get_xticklabels(), rotation=30)
 
@@ -1992,7 +1997,12 @@ def plot_average_responders_per_trial_type(dict_df_responders, sess_type='sens',
             max_y = np.max(bottom_pos)
             # add_y = max_y * 0.2
             if add_y is None:
-                add_y = 0.25
+                if normalise_5_percent:
+                    add_y = 1.25
+                    ax.set_yticks(np.arange(0, 12, 2))
+                else:
+                    add_y = 0.25
+                    ax.set_yticks(np.arange(0, max_y + add_y, 0.5))
             curr_y = max_y 
             ## Plot statistics (a horizontal line between each pair of trial types, with p value)
             for itt1, tt1 in enumerate(unique_trial_types):
@@ -2006,13 +2016,12 @@ def plot_average_responders_per_trial_type(dict_df_responders, sess_type='sens',
                     curr_y = curr_y + add_y
                     ax.plot([itt1, itt2], [curr_y, curr_y], 'k-', linewidth=1, clip_on=False, zorder=1)
                     ax.annotate(p_val_readable, xy=((itt1 + itt2) / 2, curr_y - 0.1 * add_y), ha='center', va='top', clip_on=False)
-
-            ax.set_xticks(x_pos)
-            ax.set_xticklabels([x.replace('non_projecting', 'non\nprojecting') for x in unique_trial_types])
-            ax.set_yticks(np.arange(0, max_y + add_y, 0.5))
-            # ax.set_ylim([0, max_y + add_y])
-            ax.set_ylabel('Responders (normalised %)')
-            rfv.despine(ax)
+                   
+        ax.set_ylabel('Responders (normalised %)')
+        ax.set_xticks(x_pos)
+        ax.set_xticklabels([x.replace('non_projecting', 'non\nprojecting') for x in unique_trial_types])
+        # ax.set_ylim([0, max_y + add_y])
+        rfv.despine(ax)
 
     return df_responders_all_normalised
 
@@ -2266,7 +2275,7 @@ def load_responders_different(stat_test_use='wilcoxon', fdr_rate_sens='1e-01', f
     return df_s1_comb, df_s2_comb
     
 
-def plot_effect_fdr_responders(ax=None, plot_std=True, save_fig=False):
+def plot_effect_fdr_responders(ax=None, plot_std=True, save_fig=False, print_sham_stats=False):
 
     stat_test = 'wilcoxon'
     sweep_fdr = ['1e-02', '2e-02', '5e-02', '1e-01', '3e-01', '5e-01']
@@ -2298,6 +2307,12 @@ def plot_effect_fdr_responders(ax=None, plot_std=True, save_fig=False):
 
     df_results_all_fdr['percent_total_responders'] = df_results_all_fdr['percent_positive_responders'] + df_results_all_fdr['percent_negative_responders']
     ## df_results_all_fdr now has columns: session_name_readable, trial_type, percent_positive_responders, percent_negative_responders, fdr, percent_total_responders
+    
+    if print_sham_stats:
+        for tt in ['sham_sens', 'sham_proj']:
+            df_tmp = df_results_all_fdr[df_results_all_fdr.trial_type == tt]
+            print(f'{tt}: {df_tmp.groupby("fdr").mean().percent_total_responders} +/- {df_tmp.groupby("fdr").std().percent_total_responders}')
+    
     for k, v in label_tt_dict.items():
         df_results_all_fdr['trial_type'] = df_results_all_fdr['trial_type'].replace(k, v)
     if ax is None:
