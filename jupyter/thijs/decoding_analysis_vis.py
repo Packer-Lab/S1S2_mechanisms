@@ -67,6 +67,13 @@ label_tt_dict = {'sensory': 'Sensory',
                   'whisker': 'Whisker',
                   'sham': 'Sham'}                 
 
+for tmp_dict in [colour_tt_dict, label_tt_dict]:
+    tmp_dict['sham_sens'] = tmp_dict['sham']
+    tmp_dict['sham_proj'] = tmp_dict['sham']
+for k, v in label_tt_dict.items():
+    colour_tt_dict[v] = colour_tt_dict[k]
+
+
 def get_session_names(pkl_folder=pkl_folder,
                       sess_type='sens'):
     pkl_folder_path = os.path.join(pkl_folder, sess_type_dict[sess_type])
@@ -1879,8 +1886,8 @@ def plot_sorted_responders_per_trial_type(dict_df_responders):
 
 def plot_average_responders_per_trial_type(dict_df_responders, sess_type='sens', ax=None,
                                            list_tt_ignore=[], list_trial_numbers_ignore=[],
-                                           stat_test_compare='mannwhitneyu',
-                                           plot_pos_neg_separately=True, plot_stats=True, n_bonf=None,
+                                           stat_test_compare='mannwhitneyu', n_bonf=None,
+                                           plot_pos_neg_separately=True, plot_stats=True, plot_non_sham_stats=False,
                                            plot_legend=True, add_y=None):
     
     df_responders_all = pd.concat(list(dict_df_responders[sess_type].values()),)
@@ -1992,7 +1999,7 @@ def plot_average_responders_per_trial_type(dict_df_responders, sess_type='sens',
                 for itt2, tt2 in enumerate(unique_trial_types):
                     if itt1 >= itt2:
                         continue
-                    if 'sham' not in [tt1, tt2]:
+                    if 'sham' not in [tt1, tt2] and plot_non_sham_stats is False:
                         continue
                     p_val = p_val_dict[(tt1, tt2)]
                     p_val_readable = rfv.readable_p_significance_statement(p_val, n_bonf=n_bonf)[1]
@@ -2154,7 +2161,7 @@ def overview_plot_correlations(sess_dict, sess_type='sens',
 def exponential_decay(x, a, b, c):
                 return a * np.exp(-b * x) + c
 
-def plot_change_target_response(dict_df_responders_s1, verbose=1):
+def plot_change_target_response(dict_df_responders_s1, verbose=1, save_fig=False):
     fig, ax = plt.subplots(2, 2, figsize=(10, 8), gridspec_kw={'hspace': 0.4, 'wspace': 0.3})
     n_trials = 100
     n_sess = 6
@@ -2196,7 +2203,7 @@ def plot_change_target_response(dict_df_responders_s1, verbose=1):
             r_squared_linear = r_value ** 2
             
             # Fit exponential decay
-            popt, pcov = scipy.optimize.curve_fit(exponential_decay, x, y, p0=[1, 1e-3, 1])
+            popt, pcov = scipy.optimize.curve_fit(exponential_decay, x, y, p0=[1, 1e-3, 1], maxfev=10000)
             y_fit = exponential_decay(x, *popt)
             residuals = y - y_fit
             ss_res = np.sum(residuals**2)
@@ -2219,7 +2226,8 @@ def plot_change_target_response(dict_df_responders_s1, verbose=1):
                 ax[i_st, col].plot(x, y_fit, c='k', alpha=1, linewidth=2)
             assert slope < 0, f'slope is {slope}'
             assert pearson_r < 0, f'pearson_r is {pearson_r}'
-            ax[i_st, col].annotate("$R^2$" + f' = {r_sq_use:.2f}, r = {np.round(pearson_r, 2)} ({rfv.readable_p_significance_statement(p_value, n_bonf=4)[1]})', 
+            pearson_p = 0.5 * pearson_p  # Go from two-tailed to one-tailed (assert above ensures that pearson_r is negative)
+            ax[i_st, col].annotate("$R^2$" + f' = {r_sq_use:.2f}, r = {np.round(pearson_r, 2)} ({rfv.readable_p_significance_statement(pearson_p, n_bonf=4)[1]})', 
                             (0.98, 0.95), xycoords='axes fraction', ha='right', va='center', color='k')
             # ax[i_st, col].legend()
             ax[i_st, col].set_xlabel('Trials')
@@ -2232,3 +2240,105 @@ def plot_change_target_response(dict_df_responders_s1, verbose=1):
     rfv.equal_lims_n_axs(ax.flatten())
     for i_lab, lab in enumerate('abcd'):
         ax.flatten()[i_lab].annotate(lab, (-0.23, 1.05), xycoords='axes fraction', weight='bold', fontsize=16)
+
+    if save_fig:
+        fig.savefig(f'figs/fig_change_target_response.pdf', bbox_inches='tight')
+
+def load_responders(stat_test_use='wilcoxon', fdr_rate_use = '5e-01'):
+
+    ## Load
+    with open(f'results_responders/df_responders_s1_{stat_test_use}_window-16-timepoints_fdr-{fdr_rate_use}.pkl', 'rb') as f:
+        dict_df_responders_s1 = pickle.load(f)
+
+    with open(f'results_responders/df_responders_s2_{stat_test_use}_window-16-timepoints_fdr-{fdr_rate_use}.pkl', 'rb') as f:
+        dict_df_responders_s2 = pickle.load(f)
+
+    return dict_df_responders_s1, dict_df_responders_s2
+
+def load_responders_different(stat_test_use='wilcoxon', fdr_rate_sens='1e-01', fdr_rate_proj='2e-02'):
+    df_s1_sens, df_s2_sens = load_responders(stat_test_use=stat_test_use, fdr_rate_use=fdr_rate_sens)
+    df_s1_proj, df_s2_proj = load_responders(stat_test_use=stat_test_use, fdr_rate_use=fdr_rate_proj)
+
+    ## combine:
+    df_s1_comb = {'sens': df_s1_sens['sens'], 'proj': df_s1_proj['proj']}
+    df_s2_comb = {'sens': df_s2_sens['sens'], 'proj': df_s2_proj['proj']}
+
+    return df_s1_comb, df_s2_comb
+    
+
+def plot_effect_fdr_responders(ax=None, plot_std=True, save_fig=False):
+
+    stat_test = 'wilcoxon'
+    sweep_fdr = ['1e-02', '2e-02', '5e-02', '1e-01', '3e-01', '5e-01']
+
+    for i_fdr, fdr in enumerate(sweep_fdr):
+        fdr_float = float(fdr)
+        dict_df_responders_s1, dict_df_responders_s2 = load_responders(stat_test_use=stat_test, fdr_rate_use=fdr)
+        dict_df_responders_use = dict_df_responders_s2
+
+        for i_st, st in enumerate(['sens', 'proj']):
+            df_concat = pd.concat(list(dict_df_responders_use[st].values()))
+            df_tmp_result = df_concat.groupby(['session_name_readable', 'trial_type',]).mean()
+            for col_tmp in ['n_positive_responders_targets', 'n_negative_responders_targets', 'n_positive_responders', 'n_negative_responders', 'trial', ]:
+                if col_tmp in df_tmp_result.columns:
+                    df_tmp_result = df_tmp_result.drop(col_tmp, axis=1)
+            df_tmp_result = df_tmp_result.reset_index()
+            df_tmp_result['trial_type'] = df_tmp_result['trial_type'].replace('sham', f'sham_{st}')
+            
+            if i_st == 0:
+                df_results_all_tt = df_tmp_result.copy()
+            else:
+                df_results_all_tt = pd.concat([df_results_all_tt, df_tmp_result])
+
+        df_results_all_tt['fdr'] = fdr_float 
+        if i_fdr == 0:
+            df_results_all_fdr = df_results_all_tt.copy()
+        else:
+            df_results_all_fdr = pd.concat([df_results_all_fdr, df_results_all_tt])
+
+    df_results_all_fdr['percent_total_responders'] = df_results_all_fdr['percent_positive_responders'] + df_results_all_fdr['percent_negative_responders']
+    ## df_results_all_fdr now has columns: session_name_readable, trial_type, percent_positive_responders, percent_negative_responders, fdr, percent_total_responders
+    for k, v in label_tt_dict.items():
+        df_results_all_fdr['trial_type'] = df_results_all_fdr['trial_type'].replace(k, v)
+    if ax is None:
+        if plot_std:
+            fig, ax = plt.subplots(1, 2, figsize=(10, 4), gridspec_kw={'wspace': 0.4})
+            ax_mean, ax_std = ax
+            ax_list = [ax_mean, ax_std]
+            ax_std.set_ylabel('Std of total S2 responders,\n across sessions (%)')
+        else:
+            ax_mean = plt.subplot(111)
+            ax_list = [ax_mean]
+    # sns.lineplot(data=df_results_all_fdr, x='fdr', y='percent_total_responders', hue='trial_type', 
+    #             marker='o', ax=ax_mean, palette=colour_tt_dict, ci=95)  # with errorbars 
+    sns.lineplot(data=df_results_all_fdr.groupby(['trial_type', 'fdr']).mean(), x='fdr', y='percent_total_responders', hue='trial_type', 
+                marker='o', ax=ax_mean, palette=colour_tt_dict, legend=True)
+    sns.lineplot(data=df_results_all_fdr.groupby(['trial_type', 'fdr']).std(), x='fdr', y='percent_total_responders', hue='trial_type', 
+                marker='o', ax=ax_std, palette=colour_tt_dict, legend=False)
+    ax_mean.legend(frameon=False)
+    ax_mean.set_ylabel('Total S2 responders,\naverage across sessions (%)')
+    for i_ax, ax_curr in enumerate(ax_list):
+        ax_curr.annotate('a' if i_ax == 0 else 'b', (-0.23, 1.0), va='top', xycoords='axes fraction', weight='bold', fontsize=16)
+        ax_curr.set_xscale('log')
+        ax_curr.set_xticks(np.array(sweep_fdr, dtype=np.float))
+        # ax_curr.set_xticklabels(sweep_fdr)
+        ax_curr.set_xticklabels([float(x) for x in sweep_fdr])
+        for perc_plot in [1, 2, 5]:
+            ax_curr.plot([float(sweep_fdr[0]), float(sweep_fdr[-1])], [perc_plot, perc_plot], c='grey', linestyle='--', zorder=-1)
+        rfv.despine(ax_curr)
+        ax_curr.set_xlabel('FDR threshold')
+
+    if plot_std:
+        rfv.equal_lims_n_axs(ax_list)
+    # ## Plot
+    # fig, ax = plt.subplots(1, 2, figsize=(8, 3), gridspec_kw={'wspace': 0.4})
+    # sns.barplot(data=df_results_all_fdr, x='trial_type', y='percent_positive_responders',
+    #             hue='fdr', ci=95, ax=ax[0], palette='viridis')
+    # sns.barplot(data=df_results_all_fdr, x='trial_type', y='percent_negative_responders',
+    #             hue='fdr', ci=95, ax=ax[1], palette='viridis')
+
+
+    if save_fig:
+        fig.savefig(f'figs/fig_fdr_responders_sweep_{stat_test}.pdf', bbox_inches='tight')
+
+    return df_results_all_fdr
