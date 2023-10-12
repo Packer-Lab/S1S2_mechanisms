@@ -1725,11 +1725,13 @@ def get_percent_cells_responding(session, region='s1', fdr_rate=0.01,
 
     return percent_positive_responders, percent_negative_responders, sel_data, df_results, meta_data
 
-def overview_plot_metric_vs_responders(sess_dict, sess_type='sens', 
-                                       dict_df_responders=None,
+def overview_plot_metric_vs_responders(sess_dict, 
+                                       dict_df_responders_s1, dict_df_responders_s2, 
+                                       sess_type='sens', region_use='s2',
                                        metric='pop_var', zscore_metric=False,
                                        response_type='positive',
-                                       append_to_title=''):
+                                        ax=None,  plot_individual_sessions=True,
+                                        save_fig=False):
     n_sess = 6
     assert sess_type in ['sens', 'proj'], f'sess_type must be sens or proj, not {sess_type}'
     if sess_type == 'sens':
@@ -1741,24 +1743,50 @@ def overview_plot_metric_vs_responders(sess_dict, sess_type='sens',
     assert metric in ['pop_var', 'dot_product_spont_stim'], f'metric can not be {metric}'
     assert response_type in ['positive', 'negative', 'total', 'pre_post_corr_s2'], f'response_type must be positive, negative or total, not {response_type}'
    
-    fig = plt.figure(figsize=(4 * n_tts, 6))
-    gs_tt = {}
-
-    if n_tts == 3:    
-        gs_tt[0] = plt.GridSpec(3, 2, left=0.03, right=0.3, top=0.95, bottom=0.05, wspace=0.3, hspace=0.3)
-        gs_tt[1] = plt.GridSpec(3, 2, left=0.36, right=0.63, top=0.95, bottom=0.05, wspace=0.3, hspace=0.3)
-        gs_tt[2] = plt.GridSpec(3, 2, left=0.7, right=0.97, top=0.95, bottom=0.05, wspace=0.3, hspace=0.3)
-    elif n_tts == 4:
-        gs_tt[0] = plt.GridSpec(3, 2, left=0.03, right=0.22, top=0.95, bottom=0.05, wspace=0.3, hspace=0.3)
-        gs_tt[1] = plt.GridSpec(3, 2, left=0.28, right=0.47, top=0.95, bottom=0.05, wspace=0.3, hspace=0.3)
-        gs_tt[2] = plt.GridSpec(3, 2, left=0.53, right=0.72, top=0.95, bottom=0.05, wspace=0.3, hspace=0.3)
-        gs_tt[3] = plt.GridSpec(3, 2, left=0.79, right=0.99, top=0.95, bottom=0.05, wspace=0.3, hspace=0.3)
+    if region_use == 's1':
+        dict_df_responders = dict_df_responders_s1
+        append_to_title = ' (S1)'
+    elif region_use == 's2':
+        dict_df_responders = dict_df_responders_s2
+        append_to_title = ' (S2)'
     else:
-        assert False, f'n_tts must be 3 or 4, not {n_tts}'
+        assert False
 
-    ax_dict = {i_tt: {} for i_tt in range(n_tts)}
+
+    if plot_individual_sessions:
+        fig = plt.figure(figsize=(4 * n_tts, 6))
+        gs_tt = {}
+
+        if n_tts == 3:    
+            gs_tt[0] = plt.GridSpec(3, 2, left=0.03, right=0.3, top=0.95, bottom=0.05, wspace=0.3, hspace=0.3)
+            gs_tt[1] = plt.GridSpec(3, 2, left=0.36, right=0.63, top=0.95, bottom=0.05, wspace=0.3, hspace=0.3)
+            gs_tt[2] = plt.GridSpec(3, 2, left=0.7, right=0.97, top=0.95, bottom=0.05, wspace=0.3, hspace=0.3)
+        elif n_tts == 4:
+            gs_tt[0] = plt.GridSpec(3, 2, left=0.03, right=0.22, top=0.95, bottom=0.05, wspace=0.3, hspace=0.3)
+            gs_tt[1] = plt.GridSpec(3, 2, left=0.28, right=0.47, top=0.95, bottom=0.05, wspace=0.3, hspace=0.3)
+            gs_tt[2] = plt.GridSpec(3, 2, left=0.53, right=0.72, top=0.95, bottom=0.05, wspace=0.3, hspace=0.3)
+            gs_tt[3] = plt.GridSpec(3, 2, left=0.79, right=0.99, top=0.95, bottom=0.05, wspace=0.3, hspace=0.3)
+        else:
+            assert False, f'n_tts must be 3 or 4, not {n_tts}'
+
+        ax_dict = {i_tt: {} for i_tt in range(n_tts)}
+
+    else:
+        if ax is None:
+            fig, ax = plt.subplots(1, n_tts, figsize=(3 * n_tts, 3), gridspec_kw={'wspace': 0.4})
+        if sess_type == 'sens': 
+            tt_list_all = ['sensory', 'random', 'whisker', 'sham']
+        elif sess_type == 'proj':
+            tt_list_all = ['projecting', 'non_projecting', 'sham']
+        dict_responders_all = {tt: np.array([]) for tt in tt_list_all} 
+        dict_metric_all = {tt: np.array([]) for tt in tt_list_all}
+        assert zscore_metric
+
     save_tt_names = np.zeros((n_tts, n_sess), dtype=np.object)
     for sess_id in range(n_sess):
+        if  plot_individual_sessions is False:
+            dict_tmp_responders = {}
+            dict_tmp_metrics = {}
         curr_ds = sess_dict[sess_id].full_ds
         if sess_type == 'sens':
             assert len(curr_ds.trial_type) == 400, f'len trial type is {len(curr_ds.trial_type)}'
@@ -1817,46 +1845,79 @@ def overview_plot_metric_vs_responders(sess_dict, sess_type='sens',
             if zscore_metric:
                 metric_plot = (metric_plot - metric_plot.mean()) / metric_plot.std()
 
-            pearson_r, pearson_p = scipy.stats.pearsonr(metric_plot, responders)
+            if plot_individual_sessions:
+                pearson_r, pearson_p = scipy.stats.pearsonr(metric_plot, responders)
 
-            row_id = sess_id // 2
-            col_id = sess_id % 2
-            ax_dict[i_tt][sess_id] = fig.add_subplot(gs_tt[i_tt][row_id, col_id])
-            curr_ax = ax_dict[i_tt][sess_id]
-            curr_ax.plot(metric_plot, responders, '.', markersize=6, color=colour_tt_dict[tt])
-            p_val = rfv.readable_p_significance_statement(pearson_p, n_bonf=6)[1]
-            curr_ax.annotate(f'r = {pearson_r:.2f}, {p_val}', xy=(0.05, 1.05), xycoords='axes fraction',
-                             weight='bold' if p_val != 'n.s.' else 'normal')
-            rfv.despine(curr_ax)
-            if zscore_metric:
-                curr_ax.set_xlim([-3.5, 3.5])
-            else:
-                if metric == 'pop_var':
-                    curr_ax.set_xlim([-4, -1.5])
-                elif metric == 'dot_product_spont_stim':
-                    curr_ax.set_xlim([-12, 12]) 
-            if row_id == 2:
-                if metric == 'pop_var':
-                    curr_ax.set_xlabel('Population variance\n(log' + (' zscored)' if zscore_metric else ')'))
-                elif metric == 'dot_product_spont_stim':
-                    curr_ax.set_xlabel('Similarity spont/stim')
-            else:
-                curr_ax.set_xticklabels([])
-            if col_id == 0:
-                if response_type == 'pre_post_corr_s2':
-                    curr_ax.set_ylabel('Correlation\npre/post stim S1')
-                    curr_ax.set_ylim([-0.4, 0.6])
+                row_id = sess_id // 2
+                col_id = sess_id % 2
+                ax_dict[i_tt][sess_id] = fig.add_subplot(gs_tt[i_tt][row_id, col_id])
+                curr_ax = ax_dict[i_tt][sess_id]
+                curr_ax.plot(metric_plot, responders, '.', markersize=6, color=colour_tt_dict[tt])
+                p_val = rfv.readable_p_significance_statement(pearson_p, n_bonf=6)[1]
+                curr_ax.annotate(f'r = {pearson_r:.2f}, {p_val}', xy=(0.05, 1.05), xycoords='axes fraction',
+                                weight='bold' if p_val != 'n.s.' else 'normal')
+                rfv.despine(curr_ax)
+                if zscore_metric:
+                    curr_ax.set_xlim([-3.5, 3.5])
                 else:
-                    curr_ax.set_ylabel(f'{response_type} responders (%)')
+                    if metric == 'pop_var':
+                        curr_ax.set_xlim([-4, -1.5])
+                    elif metric == 'dot_product_spont_stim':
+                        curr_ax.set_xlim([-12, 12]) 
+                if row_id == 2:
+                    if metric == 'pop_var':
+                        curr_ax.set_xlabel('Population variance\n(log' + (' zscored)' if zscore_metric else ')'))
+                    elif metric == 'dot_product_spont_stim':
+                        curr_ax.set_xlabel('Similarity spont/stim')
+                else:
+                    curr_ax.set_xticklabels([])
+                if col_id == 0:
+                    if response_type == 'pre_post_corr_s2':
+                        curr_ax.set_ylabel('Correlation\npre/post stim S1')
+                        curr_ax.set_ylim([-0.4, 0.6])
+                    else:
+                        curr_ax.set_ylabel(f'{response_type} responders (%)')
+                else:
+                    pass
             else:
-                pass
+                dict_tmp_responders[tt] = responders
+                if tt == 'sham':
+                    av_sham_responses = np.mean(responders)
+                dict_tmp_metrics[tt] = metric_plot
+        
+        if plot_individual_sessions is False:
+            for tt in dict_tmp_responders.keys():
+                if tt != 'sham':
+                    dict_tmp_responders[tt] = dict_tmp_responders[tt] / np.mean(av_sham_responses) * 5  # normalise to 5 percent of sham responses 
+                dict_responders_all[tt] = np.concatenate((dict_responders_all[tt], dict_tmp_responders[tt]))
+                dict_metric_all[tt] = np.concatenate((dict_metric_all[tt], dict_tmp_metrics[tt]))
 
-    for i_tt in range(n_tts):
-        fig.align_ylabels(list(ax_dict[i_tt].values())[::2])
-        assert len(np.unique(save_tt_names[i_tt, :])) == 1, f'trial types are not the same across sessions for tt {i_tt}'
-        title_use = save_tt_names[i_tt, 0] + append_to_title
-        ax_dict[i_tt][0].set_title(title_use, y=1.15, x=1.25,
-                                   fontdict={'fontsize': 14, 'fontweight': 'bold', 'color': colour_tt_dict[save_tt_names[i_tt, 0]]})
+    if plot_individual_sessions:
+        for i_tt in range(n_tts):
+            fig.align_ylabels(list(ax_dict[i_tt].values())[::2])
+            assert len(np.unique(save_tt_names[i_tt, :])) == 1, f'trial types are not the same across sessions for tt {i_tt}'
+            title_use = label_tt_dict[save_tt_names[i_tt, 0]] + append_to_title
+            ax_dict[i_tt][0].set_title(title_use, y=1.15, x=1.25,
+                                    fontdict={'fontsize': 14, 'fontweight': 'bold', 'color': colour_tt_dict[save_tt_names[i_tt, 0]]})
+
+    else:
+        labels = 'abcd'
+        for i_tt, tt in enumerate(tt_list_all):
+            ax[i_tt].plot(dict_metric_all[tt], dict_responders_all[tt], '.', markersize=6, color=colour_tt_dict[tt])
+            pearson_r, pearson_p = scipy.stats.pearsonr(dict_metric_all[tt], dict_responders_all[tt])
+            p_val = rfv.readable_p_significance_statement(pearson_p, n_bonf=6)[1]
+            ax[i_tt].annotate(f'r = {pearson_r:.2f}, {p_val}', xy=(0.05, 1), xycoords='axes fraction',
+                            weight='bold' if p_val != 'n.s.' else 'normal', va='bottom')
+            rfv.despine(ax[i_tt])
+            ax[i_tt].set_xlabel('Population variance\n(log, z-scored)')
+            ax[i_tt].set_ylabel(f'{response_type} {region_use.upper()} responders (norm. %)')
+            ax[i_tt].set_title(label_tt_dict[tt], y=1.1)
+            ax[i_tt].annotate(labels[i_tt], xy=(-0.31, 1.13), xycoords='axes fraction', weight='bold', fontsize=14)
+        rfv.equal_lims_n_axs(ax)
+
+    if save_fig:
+        plt.savefig(f'figs/{metric}_vs_{response_type}_responders_{region_use}_{sess_type}_{"individual" if plot_individual_sessions else "pooled"}.pdf', bbox_inches='tight')
+
 
 def plot_sorted_responders_per_trial_type(dict_df_responders):
     df_tmp_result = pd.concat(list(dict_df_responders.values()))
