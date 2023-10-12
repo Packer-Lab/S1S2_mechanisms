@@ -44,6 +44,9 @@ import rep_fig_vis as rfv
 # import utils.ia_funcs as ia 
 # import utils.utils_funcs as uf
 
+plt.rcParams['xtick.bottom'] = True
+plt.rcParams['ytick.left'] = True
+
 sess_type_dict = {'sens': 'sensory_2sec_test',
                   'proj': 'projection_2sec_test'}
 
