@@ -988,7 +988,8 @@ def plot_raster_sorted_activity(Ses=None, sort_here=False, create_new_time_aggr_
     return ax
 
 def bar_plot_decoder_accuracy(scores_dict, dict_sess_type_tt=None, 
-                    custom_title='Full population LDA-decoding of trial types vs sham across 6 sessions'):
+                              custom_title=None, save_fig=False,
+                              decoder_type='', t_min='', t_max=''):
 
     if dict_sess_type_tt is None:
         dict_sess_type_tt = {'sens': ['sensory', 'random', 'whisker'],
@@ -1009,6 +1010,10 @@ def bar_plot_decoder_accuracy(scores_dict, dict_sess_type_tt=None,
                 err_score_arr[i_tt] = np.std(curr_scores) / np.sqrt(len(curr_scores)) * 1.96
                 color_list.append(colour_tt_dict[tt])
                 label_list.append(label_tt_dict[tt])
+                if i_tt == 0:
+                    n_sessions = len(curr_scores)
+                else:
+                    assert len(curr_scores) == n_sessions
                 i_tt += 1
                 
         ax_curr.bar(x=np.arange(n_tt), height=mean_score_arr - 0.5, yerr=err_score_arr,
@@ -1016,13 +1021,17 @@ def bar_plot_decoder_accuracy(scores_dict, dict_sess_type_tt=None,
                     width=0.8, bottom=0.5)
         ax_curr.set_ylim([0, 1])
         ax_curr.set_xlabel('Trial type')
-        ax_curr.set_ylabel('Decoding accuracy')
-        ax_curr.text(x=-0.5, y=0.05, s=f'{region.upper()}', fontdict={'weight': 'bold'})
+        ax_curr.set_ylabel(f'{region.upper()} decoding accuracy')
+        # ax_curr.text(x=-0.5, y=0.05, s=f'{region.upper()}', fontdict={'weight': 'bold'})
         despine(ax_curr)
         ax_curr.set_xticklabels(ax_curr.get_xticklabels(), rotation=45)
+    if custom_title is None:
+        custom_title = f'Full population {decoder_type}-decoding of trial types vs sham across {n_sessions} sessions\nTime window: {t_min}-{t_max} seconds post-stimulus'
     ax[0].text(y=1.15, x=6, fontdict={'weight': 'bold', 'ha': 'center'},
                 s=custom_title)
-    # return ax
+    
+    if save_fig: 
+        plt.savefig(f'figs/pop_decoder_accuracy_{decoder_type}_{t_min}_{t_max}.pdf', bbox_inches='tight')
 
 def plot_pca_time_aggr_activity(Ses, trial_type_list=['whisker', 'sensory', 'random', 'sham'],
                                 merge_trial_types_during_pca=True, verbose=0,
