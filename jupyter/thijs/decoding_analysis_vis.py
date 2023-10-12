@@ -23,8 +23,10 @@ from select import select
 from urllib import response
 import numpy as np 
 import matplotlib.pyplot as plt 
+import matplotlib.patches as mpatches
 import seaborn as sns
 sns.set_palette('colorblind')
+import scipy.optimize
 
 import pandas as pd
 sys.path.append(vape_path)
@@ -1878,8 +1880,10 @@ def plot_sorted_responders_per_trial_type(dict_df_responders):
 def plot_average_responders_per_trial_type(dict_df_responders, sess_type='sens', ax=None,
                                            list_tt_ignore=[], list_trial_numbers_ignore=[],
                                            stat_test_compare='mannwhitneyu',
-                                           plot_pos_neg_separately=True, plot_stats=True, n_bonf=None):
-    df_responders_all = pd.concat(list(dict_df_responders[sess_type].values()))
+                                           plot_pos_neg_separately=True, plot_stats=True, n_bonf=None,
+                                           plot_legend=True, add_y=None):
+    
+    df_responders_all = pd.concat(list(dict_df_responders[sess_type].values()),)
     df_responders_all = df_responders_all.drop(['n_positive_responders', 'n_negative_responders'], axis=1)
     for col_tmp in ['n_positive_responders_targets', 'n_negative_responders_targets']:
         if col_tmp in df_responders_all.columns:
@@ -1958,28 +1962,37 @@ def plot_average_responders_per_trial_type(dict_df_responders, sess_type='sens',
             y_pos = np.zeros(len(unique_trial_types))
             for itt, tt in enumerate(unique_trial_types):
                 y_pos[itt] = dict_responders_av[tt][col]
-            ax.bar(x_pos, y_pos, width, bottom=bottom_pos, label=col, 
+            ax.bar(x_pos, y_pos, width, bottom=bottom_pos, 
                    color=[colour_tt_dict[tt] for tt in unique_trial_types],
-                   hatch='x' if i_col == 0 else None, linewidth=1,
+                   hatch='xx' if i_col == 0 else None, linewidth=1,
+                   edgecolor='k',
                    yerr=[dict_responders_sem[tt]['percent_total_responders'] for tt in unique_trial_types] if i_col == 1 else None)
+            if plot_legend:
+                pos_patch = mpatches.Patch(facecolor='white', label='Positive responders', edgecolor='k')
+                neg_patch = mpatches.Patch(facecolor='white', hatch='xx', label='Negative responders', edgecolor='k')
+                ax.legend(handles=[pos_patch, neg_patch], handlelength=4, handleheight=2, loc='upper left', frameon=False)
 
             bottom_pos += y_pos
 
-        height_text_1 = (bottom_pos[-1] - y_pos[-1]) / 2
-        height_text_2 = (bottom_pos[-1] - y_pos[-1]) / 2 + y_pos[-1]
-        ax.annotate('Neg.', xy=(x_pos[-1] + width / 2, height_text_1), clip_on=False,
-                    ha='left', va='center', rotation=90, color='k', fontsize=12)
-        ax.annotate('Pos.', xy=(x_pos[-1] + width / 2, height_text_2), clip_on=False,
-                    ha='left', va='center', rotation=90, color='k', fontsize=12)
+        # height_text_1 = (bottom_pos[-1] - y_pos[-1]) / 2
+        # height_text_2 = (bottom_pos[-1] - y_pos[-1]) / 2 + y_pos[-1]
+        # ax.annotate('Neg.', xy=(x_pos[-1] + width / 2, height_text_1), clip_on=False,
+        #             ha='left', va='center', rotation=90, color='k', fontsize=12)
+        # ax.annotate('Pos.', xy=(x_pos[-1] + width / 2, height_text_2), clip_on=False,
+        #             ha='left', va='center', rotation=90, color='k', fontsize=12)
 
         if plot_stats:
             max_y = np.max(bottom_pos)
-            add_y = max_y * 0.2
+            # add_y = max_y * 0.2
+            if add_y is None:
+                add_y = 0.25
             curr_y = max_y 
             ## Plot statistics (a horizontal line between each pair of trial types, with p value)
             for itt1, tt1 in enumerate(unique_trial_types):
                 for itt2, tt2 in enumerate(unique_trial_types):
                     if itt1 >= itt2:
+                        continue
+                    if 'sham' not in [tt1, tt2]:
                         continue
                     p_val = p_val_dict[(tt1, tt2)]
                     p_val_readable = rfv.readable_p_significance_statement(p_val, n_bonf=n_bonf)[1]
@@ -1987,12 +2000,11 @@ def plot_average_responders_per_trial_type(dict_df_responders, sess_type='sens',
                     ax.plot([itt1, itt2], [curr_y, curr_y], 'k-', linewidth=1, clip_on=False, zorder=1)
                     ax.annotate(p_val_readable, xy=((itt1 + itt2) / 2, curr_y - 0.1 * add_y), ha='center', va='top', clip_on=False)
 
-
             ax.set_xticks(x_pos)
-            ax.set_xticklabels(unique_trial_types)
+            ax.set_xticklabels([x.replace('non_projecting', 'non\nprojecting') for x in unique_trial_types])
             ax.set_yticks(np.arange(0, max_y + add_y, 0.5))
             # ax.set_ylim([0, max_y + add_y])
-            ax.set_ylabel('Responders (norm. %)')
+            ax.set_ylabel('Responders (normalised %)')
             rfv.despine(ax)
 
     return df_responders_all_normalised
@@ -2138,3 +2150,85 @@ def overview_plot_correlations(sess_dict, sess_type='sens',
         title_use = save_tt_names[i_tt, 0] + append_to_title
         ax_dict[i_tt][0].set_title(title_use, y=1.15, x=1.25,
                                    fontdict={'fontsize': 14, 'fontweight': 'bold', 'color': colour_tt_dict[save_tt_names[i_tt, 0]]})
+
+def exponential_decay(x, a, b, c):
+                return a * np.exp(-b * x) + c
+
+def plot_change_target_response(dict_df_responders_s1, verbose=1):
+    fig, ax = plt.subplots(2, 2, figsize=(10, 8), gridspec_kw={'hspace': 0.4, 'wspace': 0.3})
+    n_trials = 100
+    n_sess = 6
+    tt_dict = {0 : {}, 1: {}}
+    for i_st, st in enumerate(['sens', 'proj']):
+        dict_mat_responders = {x: np.zeros((n_trials, n_sess)) for x in range(2)}
+        for ii in range(n_sess):
+            assert 'n_positive_responders_targets' in dict_df_responders_s1[st][ii].columns
+            
+            total_responders = dict_df_responders_s1[st][ii].n_positive_responders_targets + dict_df_responders_s1[st][ii].n_negative_responders_targets
+            ## NB: these are percentages, not number as the column name suggests (above)
+
+            if st == 'sens':
+                trials_part1 = np.where(dict_df_responders_s1[st][ii].trial_type == 'sensory')[0]
+                trials_part2 = np.where(dict_df_responders_s1[st][ii].trial_type == 'random')[0]
+                tt_dict[i_st] = {0: 'sensory', 1: 'random'}
+            elif st == 'proj':
+                trials_part1 = np.where(dict_df_responders_s1[st][ii].trial_type == 'projecting')[0]
+                trials_part2 = np.where(dict_df_responders_s1[st][ii].trial_type == 'non_projecting')[0]
+                tt_dict[i_st] = {0: 'projecting', 1: 'non_projecting'}
+            part_1 = total_responders[trials_part1].values
+            part_2 = total_responders[trials_part2].values
+            assert len(part_1) == len(part_2) == n_trials, f'The following dont match: {len(part_1)}, {len(part_2)}, {n_trials}'
+            dict_mat_responders[0][:len(part_1), ii] = part_1
+            dict_mat_responders[1][:len(part_2), ii] = part_2
+
+            ax[i_st, 0].plot(part_1, label=f'fold {ii}', c='k', alpha=0.3)
+            ax[i_st, 1].plot(part_2, label=f'fold {ii}', c='k', alpha=0.3)
+
+        for col in range(2):
+            curr_tt = tt_dict[i_st][col]
+            ax[i_st, col].plot(dict_mat_responders[col].mean(1), linewidth=3, c=colour_tt_dict[curr_tt], alpha=1)
+          
+            x = np.arange(n_trials)
+            y = dict_mat_responders[col].mean(1)
+            
+            # Fit linear regression
+            slope, intercept, r_value, p_value, std_err = scipy.stats.linregress(x, y)
+            r_squared_linear = r_value ** 2
+            
+            # Fit exponential decay
+            popt, pcov = scipy.optimize.curve_fit(exponential_decay, x, y, p0=[1, 1e-3, 1])
+            y_fit = exponential_decay(x, *popt)
+            residuals = y - y_fit
+            ss_res = np.sum(residuals**2)
+            ss_tot = np.sum((y - np.mean(y))**2)
+            r_squared_exp = 1 - (ss_res / ss_tot)
+            
+            ## Calculate Pearson corr:
+            pearson_r, pearson_p = scipy.stats.pearsonr(x, y)
+
+            if verbose > 0:
+                # Print R-squared values
+                print(f'{st} {col}')
+                print(f"R-squared (linear): {r_squared_linear:.2f}, R-squared (exponential): {r_squared_exp:.2f}")
+            
+            if r_squared_exp < r_squared_linear:
+                r_sq_use = r_squared_linear
+                ax[i_st, col].plot(np.arange(n_trials) * slope + intercept, c='k', alpha=1, linewidth=2)
+            else:
+                r_sq_use = r_squared_exp
+                ax[i_st, col].plot(x, y_fit, c='k', alpha=1, linewidth=2)
+            assert slope < 0, f'slope is {slope}'
+            assert pearson_r < 0, f'pearson_r is {pearson_r}'
+            ax[i_st, col].annotate("$R^2$" + f' = {r_sq_use:.2f}, r = {np.round(pearson_r, 2)} ({rfv.readable_p_significance_statement(p_value, n_bonf=4)[1]})', 
+                            (0.98, 0.95), xycoords='axes fraction', ha='right', va='center', color='k')
+            # ax[i_st, col].legend()
+            ax[i_st, col].set_xlabel('Trials')
+            ax[i_st, col].set_ylabel('Total responding\nstim. S1 neurons (%)')
+            rfv.despine(ax[i_st, col])
+    ax[0, 0].set_title(f'Sensory')
+    ax[0, 1].set_title(f'Random')
+    ax[1, 0].set_title(f'Projecting')
+    ax[1, 1].set_title(f'Non-projecting')
+    rfv.equal_lims_n_axs(ax.flatten())
+    for i_lab, lab in enumerate('abcd'):
+        ax.flatten()[i_lab].annotate(lab, (-0.23, 1.05), xycoords='axes fraction', weight='bold', fontsize=16)
