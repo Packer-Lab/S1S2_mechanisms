@@ -1042,7 +1042,10 @@ def bar_plot_decoder_accuracy(scores_dict, dict_sess_type_tt=None,
         custom_title = f'Full population {decoder_type}-decoding of trial types vs sham across {n_sessions} sessions\nTime window: {t_min}-{t_max} seconds post-stimulus'
     ax[0].text(y=1.15, x=6, fontdict={'weight': 'bold', 'ha': 'center'},
                 s=custom_title)
-    
+    for i_lab, lab in enumerate('ab'):
+        ax[i_lab].text(x=-0.25, y=1, s=lab, transform=ax[i_lab].transAxes,
+                        fontdict={'weight': 'bold', 'size': 16})
+
     if save_fig: 
         plt.savefig(f'figs/pop_decoder_accuracy_{decoder_type}_{t_min}_{t_max}.pdf', bbox_inches='tight')
 
@@ -1481,6 +1484,8 @@ def plot_grand_average(ds, ax=None, tt_list=['sham', 'sensory', 'random'],
             ax.legend(frameon=False, loc='lower left', ncol=2)
         elif legend_profile == 2:
             ax.legend(frameon=False, loc='upper left')
+        elif legend_profile == 3:
+            ax.legend(frameon=False, loc='center left')
     
 def plot_significance_array(array, ax=None, color_tt=None, time_ax=None, bottom_sign_bar=1,
                             text_s=None, text_x=None, text_y=None, text_c=None):
@@ -1927,7 +1932,7 @@ def overview_plot_metric_vs_responders(sess_dict,
         for i_tt, tt in enumerate(tt_list_all):
             ax[i_tt].plot(dict_metric_all[tt], dict_responders_all[tt], '.', markersize=6, color=colour_tt_dict[tt])
             pearson_r, pearson_p = scipy.stats.pearsonr(dict_metric_all[tt], dict_responders_all[tt])
-            p_val = rfv.readable_p_significance_statement(pearson_p, n_bonf=6)[1]
+            p_val = rfv.readable_p_significance_statement(pearson_p, n_bonf=7)[1]
             ax[i_tt].annotate(f'r = {pearson_r:.2f}, {p_val}', xy=(0.05, 1), xycoords='axes fraction',
                             weight='bold' if p_val != 'n.s.' else 'normal', va='bottom')
             rfv.despine(ax[i_tt])
