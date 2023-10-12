@@ -1876,7 +1876,9 @@ def plot_sorted_responders_per_trial_type(dict_df_responders):
         curr_ax.set_ylabel('Total responders (%)')
 
 def plot_average_responders_per_trial_type(dict_df_responders, sess_type='sens', ax=None,
-                                           list_tt_ignore=[], list_trial_numbers_ignore=[]):
+                                           list_tt_ignore=[], list_trial_numbers_ignore=[],
+                                           stat_test_compare='mannwhitneyu',
+                                           plot_pos_neg_separately=True, plot_stats=True, n_bonf=None):
     df_responders_all = pd.concat(list(dict_df_responders[sess_type].values()))
     df_responders_all = df_responders_all.drop(['n_positive_responders', 'n_negative_responders'], axis=1)
     for col_tmp in ['n_positive_responders_targets', 'n_negative_responders_targets']:
@@ -1897,20 +1899,101 @@ def plot_average_responders_per_trial_type(dict_df_responders, sess_type='sens',
     if len(list_trial_numbers_ignore) > 0:
         df_responders_all_normalised = df_responders_all_normalised[~df_responders_all_normalised['trial'].isin(list_trial_numbers_ignore)]
 
+    ## Extract total, positive and negative repsonders per trial type
+    dict_responders_av = {}
+    dict_responders_sem = {}  # standard error mean
+    for tt in df_responders_all_normalised['trial_type'].unique():
+        curr_df = df_responders_all_normalised[df_responders_all_normalised['trial_type'] == tt]
+        dict_responders_av[tt] = {}
+        dict_responders_sem[tt] = {}
+        for col in ['percent_total_responders', 'percent_positive_responders', 'percent_negative_responders']:
+            dict_responders_av[tt][col] = curr_df[col].mean()
+            dict_responders_sem[tt][col] = 1.96 * curr_df[col].std() / np.sqrt(len(curr_df[col]))
+        assert np.isclose(dict_responders_av[tt]['percent_total_responders'], dict_responders_av[tt]['percent_positive_responders'] + dict_responders_av[tt]['percent_negative_responders']), f'total responders : {dict_responders_av[tt]["percent_total_responders"]}, positive responders: {dict_responders_av[tt]["percent_positive_responders"]}, negative responders: {dict_responders_av[tt]["percent_negative_responders"]}'
 
-    if ax is None:
-        fig, ax  = plt.subplots(1, 2, figsize=(8, 3), gridspec_kw={'wspace': 0.4})
-    sns.barplot(data=df_responders_all_normalised, x='trial_type', y='percent_positive_responders', 
-                ci=95, ax=ax[0], palette=colour_tt_dict)
-    sns.barplot(data=df_responders_all_normalised, x='trial_type', y='percent_negative_responders', 
-                ci=95, ax=ax[1], palette=colour_tt_dict)
-    ax[0].set_ylabel('Pos.responders (norm. %)')
-    ax[1].set_ylabel('Neg. responders (norm. %)')
-    for i_ax in range(2):
-        ax[i_ax].set_xlabel('')
-        ax[i_ax].set_ylim([0, 2.5])
-        if sess_type == 'proj':
-            ax[i_ax].set_xticklabels(ax[i_ax].get_xticklabels(), rotation=30)
+    if plot_stats:
+        ## Use total to compute statistics between trial types
+        if stat_test_compare == 'mannwhitneyu':
+            stat_test = scipy.stats.mannwhitneyu
+        else:
+            assert False, 'not implemeneted'
+        p_val_dict = {}
+        unique_trial_types = df_responders_all_normalised['trial_type'].unique()
+        for itt1, tt1 in enumerate(unique_trial_types):
+            for itt2, tt2 in enumerate(unique_trial_types):
+                if tt1 == tt2:
+                    continue
+                if (tt2, tt1) in p_val_dict.keys():
+                    continue
+                p_val_dict[(tt1, tt2)] = stat_test(df_responders_all_normalised[df_responders_all_normalised['trial_type'] == tt1]['percent_total_responders'],
+                                                    df_responders_all_normalised[df_responders_all_normalised['trial_type'] == tt2]['percent_total_responders'])[1]
+        if n_bonf is None:
+            n_bonf = len(p_val_dict.keys())
+
+
+    if plot_pos_neg_separately:
+        if ax is None:
+            fig, ax  = plt.subplots(1, 2, figsize=(8, 3), gridspec_kw={'wspace': 0.4})
+        sns.barplot(data=df_responders_all_normalised, x='trial_type', y='percent_positive_responders', 
+                    ci=95, ax=ax[0], palette=colour_tt_dict)
+        sns.barplot(data=df_responders_all_normalised, x='trial_type', y='percent_negative_responders', 
+                    ci=95, ax=ax[1], palette=colour_tt_dict)
+        ax[0].set_ylabel('Pos.responders (norm. %)')
+        ax[1].set_ylabel('Neg. responders (norm. %)')
+        for i_ax in range(2):
+            ax[i_ax].set_xlabel('')
+            ax[i_ax].set_ylim([0, 2.5])
+            if sess_type == 'proj':
+                ax[i_ax].set_xticklabels(ax[i_ax].get_xticklabels(), rotation=30)
+
+    else:
+        ## Use positive and negative to plot (stacked vertically) using plt.bar
+        if ax is None:
+            ax = plt.subplot(111)
+        
+        x_pos = np.arange(len(unique_trial_types))
+        width = 0.65
+        bottom_pos = np.zeros(len(unique_trial_types))
+        for i_col, col in enumerate(['percent_negative_responders', 'percent_positive_responders']):
+            y_pos = np.zeros(len(unique_trial_types))
+            for itt, tt in enumerate(unique_trial_types):
+                y_pos[itt] = dict_responders_av[tt][col]
+            ax.bar(x_pos, y_pos, width, bottom=bottom_pos, label=col, 
+                   color=[colour_tt_dict[tt] for tt in unique_trial_types],
+                   hatch='x' if i_col == 0 else None, linewidth=1,
+                   yerr=[dict_responders_sem[tt]['percent_total_responders'] for tt in unique_trial_types] if i_col == 1 else None)
+
+            bottom_pos += y_pos
+
+        height_text_1 = (bottom_pos[-1] - y_pos[-1]) / 2
+        height_text_2 = (bottom_pos[-1] - y_pos[-1]) / 2 + y_pos[-1]
+        ax.annotate('Neg.', xy=(x_pos[-1] + width / 2, height_text_1), clip_on=False,
+                    ha='left', va='center', rotation=90, color='k', fontsize=12)
+        ax.annotate('Pos.', xy=(x_pos[-1] + width / 2, height_text_2), clip_on=False,
+                    ha='left', va='center', rotation=90, color='k', fontsize=12)
+
+        if plot_stats:
+            max_y = np.max(bottom_pos)
+            add_y = max_y * 0.2
+            curr_y = max_y 
+            ## Plot statistics (a horizontal line between each pair of trial types, with p value)
+            for itt1, tt1 in enumerate(unique_trial_types):
+                for itt2, tt2 in enumerate(unique_trial_types):
+                    if itt1 >= itt2:
+                        continue
+                    p_val = p_val_dict[(tt1, tt2)]
+                    p_val_readable = rfv.readable_p_significance_statement(p_val, n_bonf=n_bonf)[1]
+                    curr_y = curr_y + add_y
+                    ax.plot([itt1, itt2], [curr_y, curr_y], 'k-', linewidth=1, clip_on=False, zorder=1)
+                    ax.annotate(p_val_readable, xy=((itt1 + itt2) / 2, curr_y - 0.1 * add_y), ha='center', va='top', clip_on=False)
+
+
+            ax.set_xticks(x_pos)
+            ax.set_xticklabels(unique_trial_types)
+            ax.set_yticks(np.arange(0, max_y + add_y, 0.5))
+            # ax.set_ylim([0, max_y + add_y])
+            ax.set_ylabel('Responders (norm. %)')
+            rfv.despine(ax)
 
     return df_responders_all_normalised
 

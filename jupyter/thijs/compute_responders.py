@@ -46,7 +46,9 @@ def compute_responders(save_folder='/home/tplas/repos/S1S2_mechanisms/jupyter/th
     all_sess = None 
 
 if __name__ == '__main__':
-    for fdr in [0.015, 0.02, 0.3]:
-        compute_responders(stat_test='wilcoxon', 
-                        #    pre_window=(-0.7, -0.15), post_window=(0.55, 1.1), post_window_whisker=(1.1, 1.65), 
-                        fdr_rate=fdr)
+    # for fdr in [0.015, 0.02, 0.3]:
+    for stat_test in ['wilcoxon', 'ttest']:
+        for fdr in [0.01, 0.05, 0.1, 0.3, 0.5]:
+            compute_responders(stat_test=stat_test, 
+                            #    pre_window=(-0.7, -0.15), post_window=(0.55, 1.1), post_window_whisker=(1.1, 1.65), 
+                            fdr_rate=fdr)
