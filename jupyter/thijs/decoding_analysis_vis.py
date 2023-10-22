@@ -62,17 +62,18 @@ colour_tt_dict = {'sensory': colors[1],
                   'projecting': colors[4],
                   'non_projecting': colors[5],
                   'whisker': colors[6],
-                  'sham': colors[2]}
+                  'sham': colors[2],  # regular sham is #029f73
+                  'sham_sens': '#016549',
+                  'sham_proj': '#02e3a3'} 
 label_tt_dict = {'sensory': 'Sensory',
                   'random': 'Random',
                   'projecting': 'Projecting',
                   'non_projecting': 'Non-projecting',
                   'whisker': 'Whisker',
-                  'sham': 'Sham'}                 
+                  'sham': 'Sham',
+                  'sham_sens': 'Sham (sensory)',
+                  'sham_proj': 'Sham (projection)'}             
 
-for tmp_dict in [colour_tt_dict, label_tt_dict]:
-    tmp_dict['sham_sens'] = tmp_dict['sham']
-    tmp_dict['sham_proj'] = tmp_dict['sham']
 for k, v in label_tt_dict.items():
     colour_tt_dict[v] = colour_tt_dict[k]
 
@@ -2374,19 +2375,21 @@ def plot_effect_fdr_responders(ax=None, plot_std=True, save_fig=False, print_sha
         dict_df_responders_use = dict_df_responders_s2
 
         for i_st, st in enumerate(['sens', 'proj']):
-            df_concat = pd.concat(list(dict_df_responders_use[st].values()))
-            df_tmp_result = df_concat.groupby(['session_name_readable', 'trial_type',]).mean()
-            for col_tmp in ['n_positive_responders_targets', 'n_negative_responders_targets', 'n_positive_responders', 'n_negative_responders', 'trial', ]:
+            df_concat = pd.concat(list(dict_df_responders_use[st].values()))  # concatenate all trials of all sessions of this type into one df
+            df_tmp_result = df_concat.groupby(['session_name_readable', 'trial_type',]).mean()  # average across trials per session/trialtype
+            for col_tmp in ['n_positive_responders_targets', 'n_negative_responders_targets', 'n_positive_responders', 'n_negative_responders', 'trial']:
                 if col_tmp in df_tmp_result.columns:
                     df_tmp_result = df_tmp_result.drop(col_tmp, axis=1)
             df_tmp_result = df_tmp_result.reset_index()
-            df_tmp_result['trial_type'] = df_tmp_result['trial_type'].replace('sham', f'sham_{st}')
+            df_tmp_result['trial_type'] = df_tmp_result['trial_type'].replace('sham', f'sham_{st}')  # rename sham to sham_sens or sham_proj
             
+            ## merge session types:
             if i_st == 0:
                 df_results_all_tt = df_tmp_result.copy()
             else:
-                df_results_all_tt = pd.concat([df_results_all_tt, df_tmp_result])
+                df_results_all_tt = pd.concat([df_results_all_tt, df_tmp_result])  # contains all sessions of both sens and proj
 
+        ## merge fdr types:
         df_results_all_tt['fdr'] = fdr_float 
         if i_fdr == 0:
             df_results_all_fdr = df_results_all_tt.copy()
@@ -2395,11 +2398,12 @@ def plot_effect_fdr_responders(ax=None, plot_std=True, save_fig=False, print_sha
 
     df_results_all_fdr['percent_total_responders'] = df_results_all_fdr['percent_positive_responders'] + df_results_all_fdr['percent_negative_responders']
     ## df_results_all_fdr now has columns: session_name_readable, trial_type, percent_positive_responders, percent_negative_responders, fdr, percent_total_responders
-    
+    print(colors[2])
     if print_sham_stats:
         for tt in ['sham_sens', 'sham_proj']:
             df_tmp = df_results_all_fdr[df_results_all_fdr.trial_type == tt]
-            print(f'{tt}: {df_tmp.groupby("fdr").mean().percent_total_responders} +/- {df_tmp.groupby("fdr").std().percent_total_responders}')
+            print(f'Mean values {tt}: {df_tmp.groupby("fdr").mean().percent_total_responders}\n\n--\n')
+            print(f'Std values {tt}: {df_tmp.groupby("fdr").std().percent_total_responders}\n\n')
     
     for k, v in label_tt_dict.items():
         df_results_all_fdr['trial_type'] = df_results_all_fdr['trial_type'].replace(k, v)
