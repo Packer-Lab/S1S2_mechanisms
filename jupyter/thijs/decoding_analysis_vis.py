@@ -37,7 +37,7 @@ from profilehooks import profile, timecall
 import sklearn.discriminant_analysis, sklearn.model_selection, sklearn.decomposition
 from tqdm import tqdm
 from statsmodels.stats import multitest
-sys.path.append('/home/tplas/repos/reproducible_figures/scripts/')
+sys.path.append(os.path.join(user_paths_dict['rfv_path'], 'scripts/'))
 import rep_fig_vis as rfv 
 
 ## From Vape:
