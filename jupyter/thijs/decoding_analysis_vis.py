@@ -176,7 +176,7 @@ class SimpleSession():
         self._n_neurons_original = len(filter_neurons_arr)
         self._n_neurons_removed = np.sum(filter_neurons_arr)
         self._mask_neurons_keep = mask_neurons  
-        # assert type(self._mask_neurons_keep[0]) == np.bool, type(self._mask_neurons_keep)
+        # assert type(self._mask_neurons_keep[0]) == bool, type(self._mask_neurons_keep)
         self.n_neurons = np.sum(mask_neurons)
         
     def create_data_objects(self):
@@ -1580,7 +1580,7 @@ def holm_bonferroni_correction(p_val_dict, alpha=0.05):
 
     for key, p_val_array in p_val_dict.items():
         n_total = len(p_val_array)
-        sign_dict[key] = np.zeros(len(p_val_array), dtype=np.bool)
+        sign_dict[key] = np.zeros(len(p_val_array), dtype=bool)
         inds_p_low_to_high = np.argsort(p_val_array)  # nans go to the end, so don't need to change rest of loop
         assert p_val_array[inds_p_low_to_high[0]] < p_val_array[inds_p_low_to_high[1]]
 
@@ -1600,7 +1600,7 @@ def group_sizes_true(array):
 
 def group_size_threshold_test(array, size_threshold=1, verbose=0):
     '''Check if there are any clusters greater than critical cluster size threshold'''
-    sign_array = np.zeros(len(array), dtype=np.bool)
+    sign_array = np.zeros(len(array), dtype=bool)
     sizes_array = group_sizes_true(array=array)  # get cluster sizes
     sizes_greater_th = sizes_array >= size_threshold  # check if there are any that are greater
     if verbose > 0:
@@ -1654,7 +1654,7 @@ def get_percent_cells_responding(session, region='s1', fdr_rate=0.01,
     assert pre_window[0] < pre_window[1] and post_window[0] < post_window[1], 'pre and post window must be in order'
     assert region in ['s1', 's2'], 'region must be s1 or s2'
     assert pre_window[1] < 0 and post_window[0] > 0, 'pre and post window must be before and after stimulus'
-    assert post_window_whisker[1] > post_window[1], 'post window whisker must be after post window'
+    assert post_window_whisker[1] >= post_window[1], 'post window whisker must be after post window'
     if get_responders_targets and region == 's2':
         get_responders_targets = False 
         print('No targets in S2, so not finding responders per targets.')
@@ -1723,13 +1723,13 @@ def get_percent_cells_responding(session, region='s1', fdr_rate=0.01,
             elif tt == 'non_projecting':
                 targets_vector = sel_data.sel(trial=i_trial).targets_non_projecting.data
             elif tt == 'sham' or tt == 'whisker':
-                targets_vector = np.zeros(len(significant_positive_cells), dtype=np.bool)
+                targets_vector = np.zeros(len(significant_positive_cells), dtype=bool)
             else:
                 assert False, f'trial type {tt} not recognised'
 
             assert len(targets_vector) == len(significant_positive_cells)
             assert len(targets_vector) == len(significant_negative_cells)
-            targets_vector = targets_vector.astype(np.bool)
+            targets_vector = targets_vector.astype(bool)
             positive_responders_targets = np.logical_and(significant_positive_cells, targets_vector)
             negative_responders_targets = np.logical_and(significant_negative_cells, targets_vector)
             n_positive_target_responders[i_trial] = np.sum(positive_responders_targets) / np.sum(targets_vector) * 100  # percentage 

@@ -5,7 +5,9 @@ import pickle
 import os 
 
 def compute_responders(save_folder='/home/tplas/repos/S1S2_mechanisms/jupyter/thijs/results_responders', 
-                       fdr_rate=0.01, pre_window=(-1.2, -0.15), post_window=(0.55, 1.65),
+                       fdr_rate=0.01, pre_window=(-1.2, -0.15), 
+                       post_window=(1.1, 2.2),
+                    #  post_window=(0.55, 1.65),
                      post_window_whisker=(1.1, 2.2), stat_test='wilcoxon'):
     ## Load all data 
     all_sess = {}
@@ -37,7 +39,8 @@ def compute_responders(save_folder='/home/tplas/repos/S1S2_mechanisms/jupyter/th
         dict_df_responders['meta_data'] = meta_data_new
         length_windows = meta_data_new['length_windows']
         stat_test = meta_data_new['stat_test']
-        filename = f'df_responders_{region_use}_{stat_test}_window-{length_windows}-timepoints_fdr-{fdr_rate_sci}.pkl'
+        post_start = int(post_window[0] * 1000)
+        filename = f'df_responders_{region_use}_{stat_test}_window-{length_windows}-timepoints_fdr-{fdr_rate_sci}_post-start-{post_start}-ms.pkl'
         filepath = os.path.join(save_folder, filename)
         with open(filepath, 'wb') as f:
             pickle.dump(dict_df_responders, f)
@@ -47,8 +50,8 @@ def compute_responders(save_folder='/home/tplas/repos/S1S2_mechanisms/jupyter/th
 
 if __name__ == '__main__':
     # for fdr in [0.015, 0.02, 0.3]:
-    for stat_test in ['ttest']:
-        for fdr in [0.02, 0.1]:
+    for stat_test in ['wilcoxon', 'ttest']:
+        for fdr in [0.01, 0.02, 0.05, 0.1, 0.3, 0.5]:
             compute_responders(stat_test=stat_test, 
                             #    pre_window=(-0.7, -0.15), post_window=(0.55, 1.1), post_window_whisker=(1.1, 1.65), 
                             fdr_rate=fdr)
