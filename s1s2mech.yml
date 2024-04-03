@@ -1,0 +1,17 @@
+name: s1s2mech
+channels:
+  - defaults
+dependencies:
+  - python=3.10
+  - seaborn
+  - xarray
+  - pandas
+  - scipy
+  - tqdm
+  - matplotlib
+  - numpy
+  - scikit-learn
+  - statsmodels
+  - jupyter
+  - tifffile
+prefix: /home/tplas/anaconda3/envs/s1s2mech

@@ -19,8 +19,8 @@ s2p_path = user_paths_dict['s2p_path']
 # stam_save_path = os.path.join(qnap_path, 'Analysis', 'STA_movies')
 # s2_borders_path = os.path.join(qnap_path, 'Analysis', 'S2_borders')
 
-from select import select
-from urllib import response
+# from select import select
+# from urllib import response
 import numpy as np 
 import matplotlib.pyplot as plt 
 import matplotlib.patches as mpatches
@@ -33,7 +33,7 @@ sys.path.append(vape_path)
 # from utils.utils_funcs import correct_s2p_combined 
 import xarray as xr
 import scipy
-from profilehooks import profile, timecall
+# from profilehooks import profile, timecall
 import sklearn.discriminant_analysis, sklearn.model_selection, sklearn.decomposition
 from tqdm import tqdm
 from statsmodels.stats import multitest
@@ -76,7 +76,6 @@ label_tt_dict = {'sensory': 'Sensory',
 
 for k, v in label_tt_dict.items():
     colour_tt_dict[v] = colour_tt_dict[k]
-
 
 def get_session_names(pkl_folder=pkl_folder,
                       sess_type='sens'):
