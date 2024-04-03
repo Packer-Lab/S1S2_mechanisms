@@ -1,9 +1,9 @@
 { "tplas_packerserver2": 
     {"paths": {
-      "pkl_folder": "/home/tplas/gin_repos/S1S2_mechanisms_data/pkl_folder/",
+      "pkl_folder": "/home/tplas/gin_repos/S1S2_mechanisms_data/pkl_files/",
       "vape_path": "/home/tplas/repos/Vape/",
       "rfv_path": "/home/tplas/repos/reproducible_figures/",
-      "s2p_path": null              
+      "s2p_path": ""
                 }
     },
  "tplas_packerserver1": 
@@ -18,16 +18,14 @@
          {"paths": {
            "pkl_folder": "/media/thijs/hooghoudt/backup_ps2_2024-01-27/home/gin_repos/S1S2_mechanisms_data/pkl_files/",
            "vape_path": "/home/thijs/repos/Vape",
-           "rfv_path": "/home/thijs/repos/reproducible_figures/",
-           "s2p_path": ""
+           "rfv_path": "/home/thijs/repos/reproducible_figures/"
                    }
          },
   "newuser_newcomputer": 
        {"paths": {
          "pkl_folder": "path/to/ginrepo/S1S2_mechanisms_data/pkl_files/",
          "vape_path": "path/to/Vape/",
-         "rfv_path": "/path/to/reproducible_figures/",
-         "s2p_path": ""
+         "rfv_path": "/path/to/reproducible_figures/"
                  }
        }
 } 
