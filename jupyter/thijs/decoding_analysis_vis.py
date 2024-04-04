@@ -365,7 +365,8 @@ class SimpleSession():
         return tmp_dataset
 
     def dataset_selector(self, region=None, min_t=None, max_t=None, trial_type_list=None,
-                         exclude_targets_s1=False, frame_id=None,
+                         exclude_targets_s1=False, exclude_targets_stim_type=None,
+                         frame_id=None,
                          sort_neurons=False, reset_sort=False,
                          deepcopy=True):
         """## xarray indexing cheat sheet:
@@ -425,7 +426,11 @@ class SimpleSession():
                 tmp_data = self.squeeze_coords(tmp_dataset=tmp_data)
 
         if exclude_targets_s1 and region == 's1':
-            target_names = [xx for xx in list(dict(tmp_data.variables).keys()) if xx[:7] == 'targets']
+            if exclude_targets_stim_type is None:
+                target_names = [xx for xx in list(dict(tmp_data.variables).keys()) if xx[:7] == 'targets']
+            else:
+                assert exclude_targets_stim_type in ['sensory', 'random', 'projecting', 'non_projecting'], f'exclude_targets_stim_type {exclude_targets_stim_type} not recognized'
+                target_names = [f'targets_{exclude_targets_stim_type}']
             for tn in target_names:
                 tmp_data = tmp_data.where(np.logical_not(tmp_data[tn]), drop=True)
                 tmp_data = self.squeeze_coords(tmp_dataset=tmp_data)
@@ -487,11 +492,13 @@ class SimpleSession():
     def create_time_averaged_response(self, t_min=0.4, t_max=2, 
                         region=None, aggregation_method='average',
                         sort_neurons=False, subtract_pop_av=False,
-                        subtract_pcs=False,
-                        trial_type_list=None):
+                        subtract_pcs=False, trial_type_list=None,
+                        exclude_targets=False, exclude_targets_stim_type=None):
         """region: 's1', 's2', None [for both]"""
         selected_ds = self.dataset_selector(region=region, min_t=t_min, max_t=t_max,
                                     sort_neurons=False, 
+                                    exclude_targets_s1=exclude_targets,
+                                    exclude_targets_stim_type=exclude_targets_stim_type,
                                     trial_type_list=trial_type_list)  # all trial types
         
         if subtract_pcs:
@@ -596,7 +603,8 @@ class SimpleSession():
                 if shuffled:
                     self.find_discr_index_neurons_shuffled(tt_1=tt, tt_2='sham')
 
-    def population_tt_decoder(self, region='s2', bool_subselect_neurons=False,
+    def population_tt_decoder(self, region='s2', 
+                              exclude_targets=False, 
                               decoder_type='LDA', tt_list=['whisker', 'sham'],
                               n_cv_splits=5, verbose=1, subtract_pcs=False,
                               t_min=0.4, t_max=2):
@@ -607,24 +615,25 @@ class SimpleSession():
         assert len(tt_list) == 2, 'only implemented for 2 tt'
         assert tt_list[0] != tt_list[1], 'only implemented for 2 tt'    
         assert tt_list[1] == 'sham', 'only implemented for sham as second tt'
-        if tt_list[0] == 'whisker':
+        stim_type = tt_list[0] 
+        if stim_type == 'whisker':
             if t_min < 1.1:
                 diff_time = 1.1 - t_min
                 t_min = 1.1
                 t_max += diff_time
                 print(f'WARNING: time window adjusted to {t_min} - {t_max} to avoid whisker stim')
+            exclude_targets = False  # whisker stim has no targets
 
         self.create_time_averaged_response(sort_neurons=False, region=region,
                                             subtract_pcs=subtract_pcs,
                                            subtract_pop_av=False, trial_type_list=tt_list,
-                                           t_min=t_min, t_max=t_max)
+                                           t_min=t_min, t_max=t_max,
+                                           exclude_targets=exclude_targets,
+                                           exclude_targets_stim_type=stim_type)
         if verbose > 0:
             print('Time-aggregated activity object created')
         ## activity is now in self.time_aggr_ds
-
-        ## neuron subselection
-        assert bool_subselect_neurons is False, 'neuron sub selection not yet implemented'
-
+  
         ## Prepare data
         tt_labels = self.time_aggr_ds.trial_type.data
         neural_data = self.time_aggr_ds.activity.data.transpose()
@@ -634,6 +643,7 @@ class SimpleSession():
         cv_obj = sklearn.model_selection.StratifiedKFold(n_splits=n_cv_splits)
         score_arr = np.zeros(n_cv_splits)
 
+        # return neural_data, tt_labels, cv_obj, score_arr
         ## run decoder:
         i_cv = 0
         for train_index, test_index in cv_obj.split(X=neural_data, y=tt_labels):
@@ -1002,6 +1012,7 @@ def plot_raster_sorted_activity(Ses=None, sort_here=False, create_new_time_aggr_
 
 def bar_plot_decoder_accuracy(scores_dict, dict_sess_type_tt=None, 
                               custom_title=None, save_fig=False,
+                              exclude_targets=False,
                               decoder_type='', t_min='', t_max=''):
 
     if dict_sess_type_tt is None:
