@@ -18,7 +18,8 @@
          {"paths": {
            "pkl_folder": "/media/thijs/hooghoudt/backup_ps2_2024-01-27/home/gin_repos/S1S2_mechanisms_data/pkl_files/",
            "vape_path": "/home/thijs/repos/Vape",
-           "rfv_path": "/home/thijs/repos/reproducible_figures/"
+           "rfv_path": "/home/thijs/repos/reproducible_figures/",
+           "s2p_path": ""
                    }
          },
   "newuser_newcomputer": 

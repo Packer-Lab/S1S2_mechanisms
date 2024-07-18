@@ -116,7 +116,9 @@ def load_session(pkl_folder=pkl_folder,
 
 class SimpleSession():
     """Class that stores session object in format that's easier to access for decoding analysis"""
-    def __init__(self, sess_type='sens', session_id=0, verbose=1,
+    def __init__(self, 
+                 filename_xarray_ds=None,
+                 sess_type='sens', session_id=0, verbose=1,
                  shuffle_trial_labels=False, shuffle_timepoints=False, 
                  shuffle_all_data=False, prestim_baseline=True,
                  bool_filter_neurons=True):
@@ -128,10 +130,6 @@ class SimpleSession():
         self.shuffle_all_data = shuffle_all_data
         self.bool_filter_neurons = bool_filter_neurons
         self.prestim_baseline = prestim_baseline
-
-        self.SesObj, self.session_name = load_session(sess_type=self.sess_type,
-                                session_id=self.session_id, verbose=self.verbose)
-        self.session_name_readable = self.session_name.rstrip('.pkl')
         
         if sess_type == 'sens':
             self._list_tt_original = ['photostim_s', 'photostim_r', 'spont', 'whisker_stim']
@@ -140,11 +138,18 @@ class SimpleSession():
 
         self.sorted_inds_neurons = None  # default 
 
-        self.filter_neurons(filter_max_abs_dff=self.bool_filter_neurons)
-        self.create_data_objects()
-        self.create_nonbaselinsed_alltrials_object()
-        self.create_full_dataset(prestim_baseline=self.prestim_baseline)
-        # self.sort_neurons(sorting_method='normal')
+        if filename_xarray_ds is None:
+            self.SesObj, self.session_name = load_session(sess_type=self.sess_type,
+                                    session_id=self.session_id, verbose=self.verbose)
+            self.session_name_readable = self.session_name.rstrip('.pkl')
+
+            self.filter_neurons(filter_max_abs_dff=self.bool_filter_neurons)
+            self.create_data_objects()
+            self.create_nonbaselinsed_alltrials_object()
+            self.create_full_dataset(prestim_baseline=self.prestim_baseline)
+            # self.sort_neurons(sorting_method='normal')
+        else:
+            self.load_ds_from_file(filename_xarray_ds)
 
     def filter_neurons(self, filter_max_abs_dff=True):
         """Filter neurons that should not be used in any analysis. These are:
@@ -328,10 +333,28 @@ class SimpleSession():
                                **target_dict})
 
         self.full_ds = data_set
+        self.init_vars()    
+
+    def init_vars(self):
         all_vars = list(dict(self.full_ds.variables).keys())                    
         self.coord_dict = {var_name: self.full_ds[var_name].dims for var_name in all_vars}  # original (squeezed) coordinates
         self.datatype_dict = {var_name: self.full_ds[var_name].dtype for var_name in all_vars}
         self.time_aggr_ds = None
+
+    def load_ds_from_file(self, filename_xarray_ds):
+        assert type(filename_xarray_ds) == str, 'filename_xarray_ds should be a string'
+        assert os.path.exists(filename_xarray_ds), f'{filename_xarray_ds} does not exist'
+
+        self.full_ds = xr.open_dataset(filename_xarray_ds)
+        self.session_name_readable = filename_xarray_ds.split('/')[-1].split('.')[0]
+        self.init_vars()
+
+    def save_full_ds(self, folder_save=None):
+        if folder_save is None:
+            folder_save = os.path.join(pkl_folder, sess_type_dict[self.sess_type])
+        filename_xarray_ds = os.path.join(folder_save, f'{self.session_name_readable}.nc')
+        self.full_ds.to_netcdf(filename_xarray_ds)
+        print(f'Saved {filename_xarray_ds}')
 
     def squeeze_coords(self, tmp_dataset):
         '''Squeeze coordinates based on original coords (self.coord_dict)'''
