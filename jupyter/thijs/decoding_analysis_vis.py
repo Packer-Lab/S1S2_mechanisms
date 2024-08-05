@@ -24,6 +24,8 @@ s2p_path = user_paths_dict['s2p_path']
 import numpy as np 
 import matplotlib.pyplot as plt 
 import matplotlib.patches as mpatches
+from matplotlib.collections import PatchCollection
+
 import seaborn as sns
 sns.set_palette('colorblind')
 import scipy.optimize
@@ -454,6 +456,7 @@ class SimpleSession():
             else:
                 assert exclude_targets_stim_type in ['sensory', 'random', 'projecting', 'non_projecting'], f'exclude_targets_stim_type {exclude_targets_stim_type} not recognized'
                 target_names = [f'targets_{exclude_targets_stim_type}']
+                print(f'WARNING: excluding {exclude_targets_stim_type} targets ONLY')
             for tn in target_names:
                 tmp_data = tmp_data.where(np.logical_not(tmp_data[tn]), drop=True)
                 tmp_data = self.squeeze_coords(tmp_dataset=tmp_data)
@@ -515,33 +518,36 @@ class SimpleSession():
     def create_time_averaged_response(self, t_min=0.4, t_max=2, 
                         region=None, aggregation_method='average',
                         sort_neurons=False, subtract_pop_av=False,
-                        subtract_pcs=False, trial_type_list=None,
+                        subtract_pcs=False, use_pcs=False, n_pcs=3, trial_type_list=None,
                         exclude_targets=False, exclude_targets_stim_type=None):
         """region: 's1', 's2', None [for both]"""
+        assert not (subtract_pcs and use_pcs), 'cannot both subtract and use PCs'
         selected_ds = self.dataset_selector(region=region, min_t=t_min, max_t=t_max,
                                     sort_neurons=False, 
                                     exclude_targets_s1=exclude_targets,
                                     exclude_targets_stim_type=exclude_targets_stim_type,
                                     trial_type_list=trial_type_list)  # all trial types
         
-        if subtract_pcs:
+        if subtract_pcs or use_pcs:
             n_timepoints_per_trial = len(selected_ds.time)
             n_trials = len(selected_ds.trial)
             selected_ds_2d = xr.concat([selected_ds.sel(trial=i_trial) for i_trial in selected_ds.trial], dim='time')  # concat trials on time axis
             # lfa = sklearn.decomposition.FactorAnalysis(n_components=2)
-            lfa = sklearn.decomposition.PCA(n_components=3)
+            lfa = sklearn.decomposition.PCA(n_components=n_pcs)
             activity_fit = selected_ds_2d.activity.data  # neurons x times
             activity_fit = activity_fit.transpose()
             pc_activity = lfa.fit_transform(X=activity_fit)
-            print(lfa.explained_variance_ratio_)
+            print(f'Expl var top {n_pcs}:', lfa.explained_variance_ratio_)
             activity_neurons_proj_pcs = np.dot(pc_activity, lfa.components_)  # dot prod of PCA activity x loading
             activity_neurons_proj_pcs = activity_neurons_proj_pcs.transpose()
             activity_neurons_proj_pcs_3d = np.stack([activity_neurons_proj_pcs[:, (i_trial * n_timepoints_per_trial):((i_trial + 1) * n_timepoints_per_trial)] for i_trial in range(n_trials)], 
                                                     axis=2)
-            # print(f'Subtracted LFA.')
-            # selected_ds = selected_ds.assign(activity=selected_ds.activity - activity_neurons_proj_pcs_3d)
-            print(f'Showing top 3 PCs')
-            selected_ds = selected_ds.assign(activity=(('neuron', 'time', 'trial'), activity_neurons_proj_pcs_3d))
+            if subtract_pcs:
+                print(f'Subtracted PCA-subtracted activity.')
+                selected_ds = selected_ds.assign(activity=selected_ds.activity - activity_neurons_proj_pcs_3d)
+            elif use_pcs:
+                print(f'Using PCA-project activity ONLY')
+                selected_ds = selected_ds.assign(activity=(('neuron', 'time', 'trial'), activity_neurons_proj_pcs_3d))
         if aggregation_method == 'average':
             tt_arr = selected_ds.trial_type.data  # extract becauses it's an arr of str, and those cannot be meaned (so will be dropped)
             selected_ds = selected_ds.mean('time')
@@ -781,9 +787,12 @@ class AllSessions():
         self.list_tt = [self._key_dict[tt] for tt in self._list_tt_original]
 
         self.create_accumulated_data()
-        self.dataset_selector = SimpleSession.dataset_selector
-        self.create_time_averaged_response = SimpleSession.create_time_averaged_response
-        self.squeeze_coords = lambda tmp_dataset: SimpleSession.squeeze_coords(self=self, tmp_dataset=tmp_dataset)
+        # self.dataset_selector = SimpleSession.dataset_selector
+        self.dataset_selector = lambda *args, **kwargs: SimpleSession.dataset_selector(self=self, *args, **kwargs)
+        # self.create_time_averaged_response = SimpleSession.create_time_averaged_response
+        self.create_time_averaged_response = lambda *args, **kwargs: SimpleSession.create_time_averaged_response(self=self, *args, **kwargs)
+        # self.squeeze_coords = lambda tmp_dataset: SimpleSession.squeeze_coords(self=self, tmp_dataset=tmp_dataset)
+        self.squeeze_coords = lambda *args, **kwargs: SimpleSession.squeeze_coords(self=self, *args, **kwargs)
 
     def create_accumulated_data(self):
         ## Load individual sessions:
@@ -819,7 +828,11 @@ class AllSessions():
                               dim='neuron', join='override')  # join='override' from https://github.com/pydata/xarray/issues/3681
         cc_ds['original_neuron_index'] = cc_ds.activity.neuron  # save original neuron index
         cc_ds['neuron'] = np.arange(cc_ds.activity.neuron.shape[0])  # but make main index uniquely accumulating across sessions
-        
+        ## add index of original session
+        orig_session_id = np.concatenate([np.ones(self.sess_dict[ii].full_ds.activity.neuron.shape[0], dtype=int) * ii for ii in range(self.n_sessions)])
+        tmp_var = xr.DataArray(data=orig_session_id, dims='neuron', coords={'neuron': cc_ds.neuron}, name='original_session_id')
+        cc_ds['original_session_id'] = tmp_var
+
         if 'neuron' in cc_ds.trial_type.dims:
             for i_trial in range(cc_ds.trial.shape[0]):
                 assert len(np.unique(cc_ds.trial_type[:, i_trial].data)) == 1  # ensure all trial types same structure
@@ -1035,7 +1048,7 @@ def plot_raster_sorted_activity(Ses=None, sort_here=False, create_new_time_aggr_
 
 def bar_plot_decoder_accuracy(scores_dict, dict_sess_type_tt=None, 
                               custom_title=None, save_fig=False,
-                              exclude_targets=False,
+                              exclude_targets=False, add_indiv=False,
                               decoder_type='', t_min='', t_max=''):
 
     if dict_sess_type_tt is None:
@@ -1049,12 +1062,14 @@ def bar_plot_decoder_accuracy(scores_dict, dict_sess_type_tt=None,
         
         mean_score_arr, err_score_arr = np.zeros(n_tt), np.zeros(n_tt)
         color_list, label_list = [], []
+        indiv_scores = []
         i_tt = 0
         for sess_type, tt_test_list in dict_sess_type_tt.items():
             for tt in tt_test_list:
                 curr_scores = scores_dict[region][sess_type][tt]
                 mean_score_arr[i_tt] = np.mean(curr_scores)
                 err_score_arr[i_tt] = np.std(curr_scores) / np.sqrt(len(curr_scores)) * 1.96
+                indiv_scores.append(curr_scores)
                 color_list.append(colour_tt_dict[tt])
                 label_list.append(label_tt_dict[tt])
                 if i_tt == 0:
@@ -1066,7 +1081,13 @@ def bar_plot_decoder_accuracy(scores_dict, dict_sess_type_tt=None,
         ax_curr.bar(x=np.arange(n_tt), height=mean_score_arr - 0.5, yerr=err_score_arr,
                     color=color_list, edgecolor='k', linewidth=2, tick_label=label_list,
                     width=0.8, bottom=0.5)
-        ax_curr.set_ylim([0, 1])
+        if add_indiv:
+            for i_tt, curr_scores in enumerate(indiv_scores):
+                ax_curr.plot([i_tt] * len(curr_scores) + np.random.rand(len(curr_scores)) * 0.3 - 0.15, 
+                             curr_scores, 'v', color='k', alpha=1)
+            ax_curr.set_ylim([0, 1.05])
+        else:
+            ax_curr.set_ylim([0, 1.0])
         ax_curr.set_xlabel('Trial type')
         ax_curr.set_ylabel(f'{region.upper()} decoding accuracy')
         # ax_curr.text(x=-0.5, y=0.05, s=f'{region.upper()}', fontdict={'weight': 'bold'})
@@ -2482,3 +2503,34 @@ def plot_effect_fdr_responders(ax=None, plot_std=True, save_fig=False, print_sha
         fig.savefig(f'figs/fig_fdr_responders_sweep_{stat_test}.pdf', bbox_inches='tight')
 
     return df_results_all_fdr
+
+def plot_mem_coefs(results, p_val_height=[0.003, 0.008]):
+    fig, ax = plt.subplots(1, 2, figsize=(10, 3), gridspec_kw={'wspace': 0.4})
+
+    tt_list = ['sensory', 'random', 'whisker', 'projecting', 'non_projecting']
+    for i_r, region in enumerate(['s1', 's2']):
+        ## plot zero line
+        ax[i_r].axhline(0, color='black', linestyle='--')
+        maxl, minl = 0, 0
+        for i_tt, tt in enumerate(tt_list):
+            res = [r for r in results if r.region == region and r.trial_type == tt][0]
+            # ax[i_r].errorbar(i_tt, (res.coef_min + res.coef_max) / 2, 
+            #                 yerr=(res.coef_max - res.coef_min) / 2, fmt='', label=tt, 
+            #                 capsize=5, alpha=1 if res.pval < 0.001 else 0.5, color=colour_tt_dict[tt])
+            maxl = max(maxl, res.coef_max)
+            minl = min(minl, res.coef_min)
+            errorbox = mpatches.Rectangle((i_tt - 0.4, res.coef_min), 0.8, res.coef_max - res.coef_min, 
+                                 facecolor=colour_tt_dict[tt], alpha=0.9 if res.pval < 0.001 else 0.5, edgecolor='black')
+            ax[i_r].add_patch(errorbox)
+
+            ax[i_r].annotate(f'p =\n{rfv.two_digit_sci_not(res.pval)}', 
+                             xy=(i_tt, p_val_height[i_r]), ha='center', va='center', fontsize=10)
+
+        ax[i_r].set_xlim([-0.5, len(tt_list) - 0.5])
+        ax[i_r].set_ylim([1.1 * minl, 1.1 * maxl])
+        ax[i_r].set_xticks(np.arange(len(tt_list)))
+        ax[i_r].set_xticklabels(tt_list, rotation=45)
+        ax[i_r].set_ylabel('Linear mixed effects\nmodel coefficient')
+        ax[i_r].set_title(f'{region.upper()} neurons')
+    plt.show()
+    return fig, ax
