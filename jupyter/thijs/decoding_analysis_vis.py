@@ -819,7 +819,8 @@ class AllSessions():
                 assert (self.sess_dict[0].full_ds.activity.shape[1:] == self.sess_dict[ii].full_ds.activity.shape[1:])
                 assert (self.sess_dict[0].full_ds.trial_type == self.sess_dict[ii].full_ds.trial_type).all()  # ensure same trial types per trial
                 assert np.allclose(self.sess_dict[0].full_ds.time.data, self.sess_dict[ii].full_ds.time.data, atol=1e-6)  # ensure same time axis
-
+        
+        orig_session_id = np.concatenate([np.ones(self.sess_dict[ii].full_ds.activity.neuron.shape[0], dtype=int) * ii for ii in range(self.n_sessions)])
         ## Create new xr.Dataset that concatenates all sessions:
         if self.memory_efficent:
             cc_ds = xr.concat(objs=[self.sess_dict[ii].full_ds.copy(deep=True) for ii in range(self.n_sessions)], 
@@ -832,7 +833,6 @@ class AllSessions():
         cc_ds['original_neuron_index'] = cc_ds.activity.neuron  # save original neuron index
         cc_ds['neuron'] = np.arange(cc_ds.activity.neuron.shape[0])  # but make main index uniquely accumulating across sessions
         ## add index of original session
-        orig_session_id = np.concatenate([np.ones(self.sess_dict[ii].full_ds.activity.neuron.shape[0], dtype=int) * ii for ii in range(self.n_sessions)])
         tmp_var = xr.DataArray(data=orig_session_id, dims='neuron', coords={'neuron': cc_ds.neuron}, name='original_session_id')
         cc_ds['original_session_id'] = tmp_var
 
