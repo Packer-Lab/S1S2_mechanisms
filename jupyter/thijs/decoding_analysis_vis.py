@@ -651,7 +651,7 @@ class SimpleSession():
                 diff_time = 1.1 - t_min
                 t_min = 1.1
                 t_max += diff_time
-                print(f'WARNING: time window adjusted to {t_min} - {t_max} to avoid whisker stim')
+                print(f'WARNING: time window for whisker adjusted to {t_min} - {t_max} to avoid whisker stim')
             exclude_targets = False  # whisker stim has no targets
 
         self.create_time_averaged_response(sort_neurons=False, region=region,
