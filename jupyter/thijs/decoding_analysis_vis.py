@@ -123,7 +123,7 @@ class SimpleSession():
                  sess_type='sens', session_id=0, verbose=1,
                  shuffle_trial_labels=False, shuffle_timepoints=False, 
                  shuffle_all_data=False, prestim_baseline=True,
-                 bool_filter_neurons=True):
+                 bool_filter_neurons=True, threshold_max_dff_filtering=10):
         self.sess_type = sess_type
         self.session_id = session_id
         self.verbose = verbose 
@@ -132,6 +132,7 @@ class SimpleSession():
         self.shuffle_all_data = shuffle_all_data
         self.bool_filter_neurons = bool_filter_neurons
         self.prestim_baseline = prestim_baseline
+        self.threshold_max_dff_filtering = threshold_max_dff_filtering
         
         if sess_type == 'sens':
             self._list_tt_original = ['photostim_s', 'photostim_r', 'spont', 'whisker_stim']
@@ -156,7 +157,7 @@ class SimpleSession():
     def filter_neurons(self, filter_max_abs_dff=True):
         """Filter neurons that should not be used in any analysis. These are:
 
-        - Neurons with max(abs(DF/F)) > 10 for any trial type
+        - Neurons with max(abs(DF/F)) > self.threshold_max_dff_filtering for any trial type
         """
         ## Find which neurons to keep:
         for i_tt, tt in enumerate(self._list_tt_original):
@@ -173,7 +174,7 @@ class SimpleSession():
             print(mv_neurons_mat)
         mv_neurons_mat = np.max(mv_neurons_mat, 1)  # max across tt
         if filter_max_abs_dff:
-            filter_neurons_arr = mv_neurons_mat > 10 
+            filter_neurons_arr = mv_neurons_mat > self.threshold_max_dff_filtering  
         else:
             filter_neurons_arr = np.zeros(n_neurons, dtype=bool)
         mask_neurons = np.logical_not(filter_neurons_arr)  # flip (True = keep)
@@ -760,7 +761,7 @@ class AllSessions():
                  shuffle_trial_labels=False, shuffle_timepoints=False, 
                  shuffle_all_data=False, prestim_baseline=True,
                  bool_filter_neurons=True, 
-                 memory_efficient=False):
+                 memory_efficient=False, threshold_max_dff_filtering=10):
         self.sess_type = sess_type
         self.n_sessions = 6  ## hard coding this because this is what the data is like
         self.verbose = verbose 
@@ -770,6 +771,7 @@ class AllSessions():
         self.bool_filter_neurons = bool_filter_neurons
         self.prestim_baseline = prestim_baseline
         self.memory_efficent = memory_efficient
+        self.threshold_max_dff_filtering = threshold_max_dff_filtering
 
         if self.sess_type == 'sens':
             self._key_dict = {'photostim_s': 'sensory', 
@@ -804,7 +806,8 @@ class AllSessions():
                                                 shuffle_timepoints=self.shuffle_timepoints,
                                                 shuffle_all_data=self.shuffle_all_data,
                                                 prestim_baseline=self.prestim_baseline,
-                                                bool_filter_neurons=self.bool_filter_neurons)
+                                                bool_filter_neurons=self.bool_filter_neurons,
+                                                threshold_max_dff_filtering=self.threshold_max_dff_filtering)
 
         if self.verbose > 0:
             print('Individual sessions loaded')
