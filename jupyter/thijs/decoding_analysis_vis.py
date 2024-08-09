@@ -175,6 +175,7 @@ class SimpleSession():
         mv_neurons_mat = np.max(mv_neurons_mat, 1)  # max across tt
         if filter_max_abs_dff:
             filter_neurons_arr = mv_neurons_mat > self.threshold_max_dff_filtering  
+            # filter_neurons_arr = mv_neurons_mat <= self.threshold_max_dff_filtering  
         else:
             filter_neurons_arr = np.zeros(n_neurons, dtype=bool)
         mask_neurons = np.logical_not(filter_neurons_arr)  # flip (True = keep)
@@ -2510,13 +2511,16 @@ def plot_effect_fdr_responders(ax=None, plot_std=True, save_fig=False, print_sha
 def plot_mem_coefs(results, p_val_height=[0.003, 0.008]):
     fig, ax = plt.subplots(1, 2, figsize=(10, 3), gridspec_kw={'wspace': 0.4})
 
-    tt_list = ['sensory', 'random', 'whisker', 'projecting', 'non_projecting']
+    tt_list = ['sensory', 'random', 'whisker', 'projecting', 'non_projecting', 'sham']
     for i_r, region in enumerate(['s1', 's2']):
         ## plot zero line
         ax[i_r].axhline(0, color='black', linestyle='--')
         maxl, minl = 0, 0
         for i_tt, tt in enumerate(tt_list):
-            res = [r for r in results if r.region == region and r.trial_type == tt][0]
+            res = [r for r in results if r.region == region and r.trial_type == tt]
+            if len(res) == 0:
+                continue
+            res = res[0]
             # ax[i_r].errorbar(i_tt, (res.coef_min + res.coef_max) / 2, 
             #                 yerr=(res.coef_max - res.coef_min) / 2, fmt='', label=tt, 
             #                 capsize=5, alpha=1 if res.pval < 0.001 else 0.5, color=colour_tt_dict[tt])
@@ -2530,7 +2534,7 @@ def plot_mem_coefs(results, p_val_height=[0.003, 0.008]):
                              xy=(i_tt, p_val_height[i_r]), ha='center', va='center', fontsize=10)
 
         ax[i_r].set_xlim([-0.5, len(tt_list) - 0.5])
-        ax[i_r].set_ylim([1.1 * minl, 1.1 * maxl])
+        ax[i_r].set_ylim([min(0, 1.1 * minl), 1.1 * maxl])
         ax[i_r].set_xticks(np.arange(len(tt_list)))
         ax[i_r].set_xticklabels(tt_list, rotation=45)
         ax[i_r].set_ylabel('Linear mixed effects\nmodel coefficient')
