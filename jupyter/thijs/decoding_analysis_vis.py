@@ -2511,7 +2511,7 @@ def plot_effect_fdr_responders(ax=None, plot_std=True, save_fig=False, print_sha
 def plot_mem_coefs(results, p_val_height=[0.003, 0.008]):
     fig, ax = plt.subplots(1, 2, figsize=(10, 3), gridspec_kw={'wspace': 0.4})
 
-    tt_list = ['sensory', 'random', 'whisker', 'projecting', 'non_projecting', 'sham']
+    tt_list = ['sensory', 'random', 'whisker', 'projecting', 'non_projecting']
     for i_r, region in enumerate(['s1', 's2']):
         ## plot zero line
         ax[i_r].axhline(0, color='black', linestyle='--')
@@ -2527,7 +2527,8 @@ def plot_mem_coefs(results, p_val_height=[0.003, 0.008]):
             maxl = max(maxl, res.coef_max)
             minl = min(minl, res.coef_min)
             errorbox = mpatches.Rectangle((i_tt - 0.4, res.coef_min), 0.8, res.coef_max - res.coef_min, 
-                                 facecolor=colour_tt_dict[tt], alpha=0.9 if res.pval < 0.001 else 0.5, edgecolor='black')
+                                 facecolor=colour_tt_dict[tt], alpha=0.9, # if res.pval < 0.001 else 0.5, 
+                                 edgecolor='black')
             ax[i_r].add_patch(errorbox)
 
             ax[i_r].annotate(f'p =\n{rfv.two_digit_sci_not(res.pval)}', 
@@ -2537,7 +2538,44 @@ def plot_mem_coefs(results, p_val_height=[0.003, 0.008]):
         ax[i_r].set_ylim([min(0, 1.1 * minl), 1.1 * maxl])
         ax[i_r].set_xticks(np.arange(len(tt_list)))
         ax[i_r].set_xticklabels(tt_list, rotation=45)
-        ax[i_r].set_ylabel('Linear mixed effects\nmodel coefficient')
+        ax[i_r].set_ylabel('Linear mixed effects\nmodel coefficient (95% c.i.)')
         ax[i_r].set_title(f'{region.upper()} neurons')
     plt.show()
     return fig, ax
+
+def plot_mem_coefs_specific_combo(results, base_tt=None, test_tt=None,
+                                  p_val_height=[0.003, 0.003], ax=None,
+                                  maxl=0.01, minl=-0.01):
+    if ax is None:
+        fig, ax = plt.subplots(1, 2, figsize=(5, 3), gridspec_kw={'wspace': 0.4})
+    
+    tt_list = ['sensory', 'random', 'whisker', 'projecting', 'non_projecting', 'sham']
+    assert base_tt in tt_list and test_tt in tt_list, f'base_tt and test_tt must be in {tt_list}'
+
+    for i_r, region in enumerate(['s1', 's2']):
+        ## plot zero line
+        ax[i_r].axhline(0, color='black', linestyle='--')    
+        res = [r for r in results if r.region == region and r.trial_type == test_tt and r.base_tt == base_tt]
+        assert len(res) == 1, f'len res is {len(res)}'
+        res = res[0]
+        # maxl = max(maxl, res.coef_max)
+        # minl = min(minl, res.coef_min)
+        i_tt = 0
+        errorbox = mpatches.Rectangle((i_tt - 0.4, res.coef_min), 0.8, res.coef_max - res.coef_min, 
+                            facecolor=colour_tt_dict[test_tt], alpha=0.9, # if res.pval < 0.001 else 0.5, 
+                            edgecolor='black')
+        ax[i_r].add_patch(errorbox)
+
+        ax[i_r].annotate(f'p =\n{rfv.two_digit_sci_not(res.pval)}', 
+                        xy=(i_tt, p_val_height[i_r]), ha='center', va='center', fontsize=10)
+
+        ax[i_r].set_xlim([-0.5, 0.5])
+        ax[i_r].set_ylim([min(0, 1.1 * minl), 1.1 * maxl])
+        ax[i_r].set_xticks(np.arange(1))
+        # ax[i_r].set_xticklabels([test_tt], rotation=45)
+        ax[i_r].set_xticklabels([f'{test_tt} vs \n{base_tt}'], rotation=0) 
+        ax[i_r].set_ylabel('Linear mixed effects\nmodel coefficient (95% c.i.)')
+        ax[i_r].set_title(f'{region.upper()} neurons')
+        rfv.despine(ax[i_r])
+    # plt.show()
+    return ax
