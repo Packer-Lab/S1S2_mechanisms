@@ -2093,21 +2093,66 @@ def plot_average_responders_per_trial_type(dict_df_responders, sess_type='sens',
 
     if plot_pos_neg_separately:
         if ax is None:
-            fig, ax  = plt.subplots(1, 2, figsize=(8, 3), gridspec_kw={'wspace': 0.4})
-        sns.barplot(data=df_responders_all_normalised, x='trial_type', y='percent_positive_responders', 
-                    ci=95, ax=ax[0], palette=colour_tt_dict)
-        sns.barplot(data=df_responders_all_normalised, x='trial_type', y='percent_negative_responders', 
-                    ci=95, ax=ax[1], palette=colour_tt_dict)
-        ax[0].set_ylabel('Pos.responders (norm. %)')
-        ax[1].set_ylabel('Neg. responders (norm. %)')
-        for i_ax in range(2):
-            ax[i_ax].set_xlabel('')
-            if normalise_5_percent:
-                ax[i_ax].set_ylim([0, 12.5])
-            else:
-                ax[i_ax].set_ylim([0, 2.5])
-            if sess_type == 'proj':
-                ax[i_ax].set_xticklabels(ax[i_ax].get_xticklabels(), rotation=30)
+            ax = plt.subplot(111)
+        
+        width = 0.65
+        half_width = width / 2
+        quarter_width = width / 4
+        x_pos = np.arange(len(unique_trial_types)) - quarter_width
+        for i_col, col in enumerate(['percent_negative_responders', 'percent_positive_responders']):
+            y_pos = np.zeros(len(unique_trial_types))
+            for itt, tt in enumerate(unique_trial_types):
+                y_pos[itt] = dict_responders_av[tt][col]
+            ax.bar(x_pos + i_col * half_width, y_pos, half_width,
+                   color=[colour_tt_dict[tt] for tt in unique_trial_types],
+                   hatch='xx' if i_col == 0 else None, linewidth=1,
+                   edgecolor='k',
+                   yerr=[dict_responders_sem[tt][col] for tt in unique_trial_types])
+            if plot_legend:
+                pos_patch = mpatches.Patch(facecolor='white', label='Positive responders', edgecolor='k')
+                neg_patch = mpatches.Patch(facecolor='white', hatch='xx', label='Negative responders', edgecolor='k')
+                ax.legend(handles=[pos_patch, neg_patch], handlelength=4, handleheight=2, loc='upper left', frameon=False)
+
+        if plot_stats:  # plot_stats
+            max_y = np.max(y_pos)
+            # add_y = max_y * 0.2
+            if add_y is None:
+                if normalise_5_percent:
+                    add_y = 1.25
+                    ax.set_yticks(np.arange(0, 12, 2))
+                else:
+                    add_y = 0.25
+                    ax.set_yticks(np.arange(0, max_y + add_y, 0.5))
+            curr_y = max_y + 4 * add_y
+            ## Plot statistics (a horizontal line between each pair of trial types, with p value)
+            for itt1, tt1 in enumerate(unique_trial_types):
+                for itt2, tt2 in enumerate(unique_trial_types):
+                    if itt1 >= itt2:
+                        continue
+                    if 'sham' not in [tt1, tt2] and plot_non_sham_stats is False:
+                        continue
+                    p_val = p_val_dict[(tt1, tt2)]
+                    p_val_readable = rfv.readable_p_significance_statement(p_val, n_bonf=n_bonf)[1]
+                    curr_y = curr_y + add_y
+                    ax.plot([itt1, itt2], [curr_y, curr_y], 'k-', linewidth=1, clip_on=False, zorder=1)
+                    ax.annotate(p_val_readable, xy=((itt1 + itt2) / 2, curr_y - 0.1 * add_y), ha='center', va='top', clip_on=False)
+
+            for itt, tt in enumerate(unique_trial_types):
+
+                p_val = stat_test(df_responders_all_normalised[df_responders_all_normalised['trial_type'] == tt]['percent_positive_responders'],
+                                df_responders_all_normalised[df_responders_all_normalised['trial_type'] == tt]['percent_negative_responders'])[1]
+                
+                p_val_readable = rfv.readable_p_significance_statement(p_val, n_bonf=n_bonf)[1]
+                print(f'{tt}: {p_val}')
+                ax.annotate(p_val_readable, xy=(itt, 1.2 * max_y + add_y), ha='center', va='top', clip_on=False)
+                ax.plot([itt - quarter_width, itt + quarter_width], [1.2 * max_y + add_y, 1.2 * max_y + add_y], 
+                        'k-', linewidth=1, clip_on=False, zorder=1)
+                   
+        ax.set_ylabel('Responders (normalised %)')
+        ax.set_xticks(x_pos)
+        ax.set_xticklabels([x.replace('non_projecting', 'non\nprojecting') for x in unique_trial_types])
+        # ax.set_ylim([0, max_y + add_y])
+        rfv.despine(ax)
 
     else:
         ## Use positive and negative to plot (stacked vertically) using plt.bar
@@ -2400,13 +2445,13 @@ def plot_change_target_response(dict_df_responders_s1, verbose=1, save_fig=False
     if save_fig:
         fig.savefig(f'figs/fig_change_target_response.pdf', bbox_inches='tight')
 
-def load_responders(stat_test_use='wilcoxon', fdr_rate_use = '5e-01'):
+def load_responders(stat_test_use='wilcoxon', fdr_rate_use = '5e-01', post_start=550):
 
     ## Load
-    with open(f'results_responders/df_responders_s1_{stat_test_use}_window-16-timepoints_fdr-{fdr_rate_use}.pkl', 'rb') as f:
+    with open(f'results_responders/df_responders_s1_{stat_test_use}_window-16-timepoints_fdr-{fdr_rate_use}_post-start-{post_start}-ms.pkl', 'rb') as f:
         dict_df_responders_s1 = pickle.load(f)
 
-    with open(f'results_responders/df_responders_s2_{stat_test_use}_window-16-timepoints_fdr-{fdr_rate_use}.pkl', 'rb') as f:
+    with open(f'results_responders/df_responders_s2_{stat_test_use}_window-16-timepoints_fdr-{fdr_rate_use}_post-start-{post_start}-ms.pkl', 'rb') as f:
         dict_df_responders_s2 = pickle.load(f)
 
     return dict_df_responders_s1, dict_df_responders_s2
@@ -2579,3 +2624,37 @@ def plot_mem_coefs_specific_combo(results, base_tt=None, test_tt=None,
         rfv.despine(ax[i_r])
     # plt.show()
     return ax
+
+def get_activity_excl_neurons(all_sess, sess_type='sens', sess_id=0, 
+                              threshold=18, n_ex=6, start_ind=0):
+    inds_excl= np.logical_not(all_sess['sens'].sess_dict[0]._mask_neurons_keep)
+    activity_full = None
+    for tt in all_sess[sess_type].sess_dict[sess_id]._list_tt_original:
+        tmp = getattr(all_sess['sens'].sess_dict[0].SesObj, tt)
+        tmp = tmp.dfof[0]
+        if activity_full is None:
+            activity_full = tmp
+        else: 
+            activity_full = np.hstack([activity_full, tmp]) 
+    assert activity_full.shape[0] == len(inds_excl)
+    activity_full_excl = activity_full[inds_excl, :]
+
+    inds_excl_use = np.where(inds_excl)[0]
+    arr_random_inds = np.random.choice(np.arange(len(inds_excl_use)), n_ex, replace=False)
+
+    fig, ax = plt.subplots(n_ex, 1, figsize=(20, n_ex * 2))
+    max_y = 0
+    for i in range(n_ex):
+        ind_use = arr_random_inds[i]
+        ax[i].plot(activity_full_excl[ind_use, :])
+        ax[i].axhline(threshold, color='k', linestyle='--', zorder=-1)
+        rfv.despine(ax[i])
+        if i == 0:
+            ax[i].set_title(f'Example excluded neurons from {sess_type} session {sess_id}. Original DFF trace shown.')
+        elif i == n_ex - 1:
+            ax[i].set_xlabel('Time (frames)')
+        ax[i].set_ylabel(f'Neuron {inds_excl_use[ind_use]} \n' + r"$(\Delta F/F)$")
+        max_y = max(max_y, np.max(activity_full_excl[ind_use, :]))
+    # for i in range(n_ex):
+    #     ax[i].set_ylim([-5, max_y * 1.05])
+    fig.align_ylabels(ax)
